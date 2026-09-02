@@ -140,6 +140,8 @@ def test_idempotency_key_prevents_duplicate_repeatable_event(session, context):
     assert first.persisted
     assert not second.persisted and second.reason == "duplicate"
     assert first.event_id == second.event_id
+    event = session.get(GameEvent, first.event_id)
+    assert event.idempotency_key == "tick:12:test" and event.repeat_scope == "ALWAYS"
 
 
 @pytest.mark.parametrize(
@@ -148,7 +150,13 @@ def test_idempotency_key_prevents_duplicate_repeatable_event(session, context):
 def test_repeat_policies(session, context, policy):
     service = EventService(session)
     item = definition(Predicate("always", lambda _: True), repeat_policy=policy)
-    assert service.evaluate_and_persist(item, context).persisted
+    first = service.evaluate_and_persist(item, context)
+    assert first.persisted
+    assert session.get(GameEvent, first.event_id).repeat_scope == {
+        RepeatPolicy.ONCE_PER_WORLD: "WORLD",
+        RepeatPolicy.ONCE_PER_SPECIES: "SPECIES",
+        RepeatPolicy.ONCE_PER_PLAYER: "PLAYER",
+    }[policy]
     assert service.evaluate_and_persist(item, context).reason == "duplicate"
 
 

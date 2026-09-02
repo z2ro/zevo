@@ -12,6 +12,12 @@ from .core import EventContext, EventDefinition, EventEvaluator, EventResult, Re
 
 
 _IDEMPOTENCY_METADATA_KEY = "_idempotency_key"
+_REPEAT_SCOPE = {
+    RepeatPolicy.ALWAYS: "ALWAYS",
+    RepeatPolicy.ONCE_PER_WORLD: "WORLD",
+    RepeatPolicy.ONCE_PER_SPECIES: "SPECIES",
+    RepeatPolicy.ONCE_PER_PLAYER: "PLAYER",
+}
 
 
 class EventService:
@@ -63,6 +69,8 @@ class EventService:
             generation=context.world.generation,
             historical=definition.historical,
             global_unique=definition.global_unique or definition.repeat_policy == RepeatPolicy.ONCE_PER_WORLD,
+            idempotency_key=idempotency_key,
+            repeat_scope=_REPEAT_SCOPE[RepeatPolicy.ONCE_PER_WORLD if definition.global_unique else definition.repeat_policy],
             species_id=getattr(context.species, "id", None),
             player_id=getattr(context.player, "id", None),
             event_metadata=metadata,
@@ -141,12 +149,9 @@ class EventService:
         elif policy == RepeatPolicy.ALWAYS and idempotency_key is None:
             return None
 
-        for event in self.session.scalars(query):
-            if policy != RepeatPolicy.ALWAYS:
-                return event
-            if event.event_metadata.get(_IDEMPOTENCY_METADATA_KEY) == idempotency_key:
-                return event
-        return None
+        if policy == RepeatPolicy.ALWAYS:
+            query = query.where(GameEvent.idempotency_key == idempotency_key)
+        return self.session.scalar(query)
 
     def _find_flag(
         self,

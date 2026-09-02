@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+from copy import copy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -14,6 +15,11 @@ from app.models.entities import Habitat, Species, SpeciesPopulationSnapshot, Spe
 from app.models.enums import SpeciesStatus
 from app.simulation.common import trait_values
 from app.simulation.engine import simulate_species
+from app.simulation.interactions import evaluate_parasitism, fitness_context_for, host_compatibility, persist_parasitism_relation
+from app.simulation.common import enum_value
+from app.events.definitions import evaluate_tick_events
+from app.simulation.bots import run_bots
+from app.services.action_service import complete_due_focuses, complete_due_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,10 @@ class SimulationService:
         next_tick = world.tick + 1
         seed = self.settings.simulation_random_seed
         rng = random.Random(f"{seed if seed is not None else 'zevo'}:{world.id}:{next_tick}")
+        world.tick = next_tick
+        complete_due_migrations(session, world.id, next_tick)
+        complete_due_focuses(session, world.id, next_tick)
+        run_bots(session, world, rng)
         habitats = {h.id: h for h in session.scalars(select(Habitat).where(Habitat.world_id == world.id))}
         species_list = list(session.scalars(
             select(Species)
@@ -51,15 +61,34 @@ class SimulationService:
             .order_by(Species.id)
         ))
         mutations = 0
+        mutation_results = {}
         extinctions = 0
         generation = world.generation + self.settings.generations_per_tick
+        # Every species sees the same pre-update ecosystem, independent of DB order.
+        snapshot = tuple(copy(species) for species in species_list)
+        contexts = {
+            species.id: fitness_context_for(species, snapshot, habitats[species.habitat_id].carrying_capacity)
+            for species in snapshot
+        }
+
+        for parasite in snapshot:
+            if enum_value(parasite.species_type) != "PARASITIC":
+                continue
+            hosts = sorted(
+                (host for host in snapshot if host_compatibility(parasite, host).compatible),
+                key=lambda host: host_compatibility(parasite, host).score,
+                reverse=True,
+            )
+            if hosts:
+                persist_parasitism_relation(session, evaluate_parasitism(parasite, hosts[0], rng))
 
         for species in species_list:
             habitat = habitats[species.habitat_id]
-            result = simulate_species(species, habitat, rng, dev_mode=self.settings.dev_mode)
+            result = simulate_species(species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode)
             species.generation += self.settings.generations_per_tick
             if result.mutation:
                 mutations += 1
+                mutation_results[species.id] = result.mutation
                 change = result.mutation
                 session.add(SpeciesTraitHistory(
                     species_id=species.id, generation=species.generation, trait=change.trait,
@@ -75,8 +104,8 @@ class SimulationService:
             ))
 
         self._apply_species_environment(world, species_list)
-        world.tick = next_tick
         world.generation = generation
+        evaluate_tick_events(session, world, species_list, rng, self.settings.dev_mode, mutation_results)
         session.add(WorldSnapshot(
             world_id=world.id, generation=generation, tick=next_tick,
             temperature=world.temperature, oxygen=world.oxygen, co2=world.co2, radiation=world.radiation,

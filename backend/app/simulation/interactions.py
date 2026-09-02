@@ -48,22 +48,15 @@ def _same_habitat(left: object, right: object) -> bool:
     return getattr(left, "habitat_id", None) == getattr(right, "habitat_id", None)
 
 
-def _resource_profile(species: object) -> tuple[float, float, float]:
+def _resource_profile(species: object, balance: BalanceConfig = BALANCE) -> tuple[float, float, float]:
     """Return use of solar, chemical and organic resource pools."""
     source = enum_value(getattr(species, "energy_source"))
-    profiles = {
-        "SOLAR": (1.0, 0.0, 0.0),
-        "CHEMICAL": (0.0, 1.0, 0.0),
-        "ORGANIC": (0.0, 0.0, 1.0),
-        # Parasites draw from hosts and do not directly compete for habitat pools.
-        "PARASITIC": (0.0, 0.0, 0.0),
-    }
-    return profiles.get(source, (0.0, 0.0, 0.0))
+    return balance.resource_profiles.get(source, (0.0, 0.0, 0.0))
 
 
-def resource_overlap(left: object, right: object) -> float:
+def resource_overlap(left: object, right: object, balance: BalanceConfig = BALANCE) -> float:
     """Cosine similarity between ecological resource profiles, in ``[0, 1]``."""
-    a, b = _resource_profile(left), _resource_profile(right)
+    a, b = _resource_profile(left, balance), _resource_profile(right, balance)
     denominator = sqrt(sum(value * value for value in a)) * sqrt(sum(value * value for value in b))
     if denominator == 0:
         return 0.0
@@ -74,6 +67,7 @@ def competition_pressure(
     focal: object,
     species_in_habitat: Iterable[object],
     carrying_capacity: int,
+    balance: BalanceConfig = BALANCE,
 ) -> CompetitionResult:
     """Aggregate population x metabolism x overlap into bounded pressure."""
     if carrying_capacity <= 0 or not _alive(focal):
@@ -87,7 +81,7 @@ def competition_pressure(
             continue
         if not _alive(other) or not _same_habitat(focal, other):
             continue
-        overlap = resource_overlap(focal, other)
+        overlap = resource_overlap(focal, other, balance)
         if overlap <= 0:
             continue
         metabolism = clamp(getattr(other, "metabolic_efficiency", 0) / 100.0, 0.0, 1.0)
@@ -105,6 +99,7 @@ def host_compatibility(
     host: object,
     *,
     previous_contact: float = 0.0,
+    balance: BalanceConfig = BALANCE,
 ) -> HostCompatibilityResult:
     """Score a potential host without randomness; establishment owns the RNG roll."""
     valid = (
@@ -120,21 +115,18 @@ def host_compatibility(
 
     # Contact rises with host abundance. Resistance and trait divergence constrain
     # infection, while mutation and historical contact broaden compatibility.
-    contact = clamp(getattr(host, "population", 0) / 1_000.0, 0.0, 1.0)
+    contact = clamp(getattr(host, "population", 0) / balance.host_abundance_scale, 0.0, 1.0)
     vulnerability = 1.0 - clamp(getattr(host, "structural_resistance", 0) / 100.0, 0.0, 1.0)
     trait_similarity = 1.0 - abs(
         getattr(parasite, "thermal_tolerance", 0) - getattr(host, "thermal_tolerance", 0)
     ) / 100.0
     adaptability = clamp(getattr(parasite, "mutation_rate", 0) / 100.0, 0.0, 1.0)
-    score = (
-        0.30 * contact
-        + 0.25 * vulnerability
-        + 0.20 * trait_similarity
-        + 0.15 * adaptability
-        + 0.10 * clamp(previous_contact, 0.0, 1.0)
-    )
+    weights = balance.host_compatibility_weights
+    score = sum(weight * value for weight, value in zip(weights, (
+        contact, vulnerability, trait_similarity, adaptability, clamp(previous_contact, 0.0, 1.0)
+    )))
     score = round(clamp(score, 0.0, 1.0), 6)
-    return HostCompatibilityResult(score >= 0.25, score)
+    return HostCompatibilityResult(score >= balance.host_compatibility_threshold, score)
 
 
 def evaluate_parasitism(
@@ -143,22 +135,23 @@ def evaluate_parasitism(
     rng: random.Random,
     *,
     previous_contact: float = 0.0,
+    balance: BalanceConfig = BALANCE,
 ) -> ParasitismResult:
     """Evaluate relation establishment using only the injected deterministic RNG."""
-    compatibility = host_compatibility(parasite, host, previous_contact=previous_contact)
+    compatibility = host_compatibility(parasite, host, previous_contact=previous_contact, balance=balance)
     transmission = compatibility.score * clamp(
-        (getattr(parasite, "energy_efficiency", 0) + getattr(parasite, "reproduction_rate", 0)) / 200.0,
+        (getattr(parasite, "energy_efficiency", 0) + getattr(parasite, "reproduction_rate", 0)) / balance.parasite_trait_scale,
         0.0,
         1.0,
     )
     infection = compatibility.score * transmission
     virulence = clamp(
-        (getattr(parasite, "metabolic_efficiency", 0) + getattr(parasite, "mutation_rate", 0)) / 200.0,
+        (getattr(parasite, "metabolic_efficiency", 0) + getattr(parasite, "mutation_rate", 0)) / balance.parasite_trait_scale,
         0.0,
         1.0,
     )
     established = compatibility.compatible and rng.random() < transmission
-    strength = compatibility.score * (0.5 * transmission + 0.5 * virulence) if established else 0.0
+    strength = compatibility.score * sum(w * v for w, v in zip(balance.parasite_strength_weights, (transmission, virulence))) if established else 0.0
     return ParasitismResult(
         getattr(parasite, "id", None),
         getattr(host, "id", None),
@@ -175,13 +168,14 @@ def fitness_context_for(
     focal: object,
     living_species: Iterable[object],
     carrying_capacity: int,
+    balance: BalanceConfig = BALANCE,
 ) -> FitnessContext:
     """Integration hook consumed by the simulation fitness calculation."""
     candidates = tuple(living_species)
-    competition = competition_pressure(focal, candidates, carrying_capacity).pressure
+    competition = competition_pressure(focal, candidates, carrying_capacity, balance).pressure
     host_score = 0.0
     if enum_value(getattr(focal, "species_type")) == "PARASITIC":
-        host_score = max((host_compatibility(focal, candidate).score for candidate in candidates), default=0.0)
+        host_score = max((host_compatibility(focal, candidate, balance=balance).score for candidate in candidates), default=0.0)
     return FitnessContext(competition=competition, host_compatibility=host_score)
 
 

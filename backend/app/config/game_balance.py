@@ -28,6 +28,15 @@ class BalanceConfig:
     fitness_competition_penalty: float = 0.55
     parasite_no_host_multiplier: float = 0.28
     parasite_host_bonus: float = 0.35
+    resource_profiles: dict[str, tuple[float, float, float]] = field(default_factory=lambda: {
+        "SOLAR": (1.0, 0.0, 0.0), "CHEMICAL": (0.0, 1.0, 0.0),
+        "ORGANIC": (0.0, 0.0, 1.0), "PARASITIC": (0.0, 0.0, 0.0),
+    })
+    host_abundance_scale: float = 1_000.0
+    host_compatibility_weights: tuple[float, float, float, float, float] = (0.30, 0.25, 0.20, 0.15, 0.10)
+    host_compatibility_threshold: float = 0.25
+    parasite_trait_scale: float = 200.0
+    parasite_strength_weights: tuple[float, float] = (0.5, 0.5)
     energy_efficiency_base: float = 0.55
     strategy_bonuses: dict[str, float] = field(default_factory=lambda: {
         "COLONIZER": 0.10, "COMPETITOR": 0.08, "RESISTANT": 0.10,
@@ -63,6 +72,12 @@ class BalanceConfig:
     stable_life_generations: int = 10_000
     major_adaptation_delta: float = 0.12
     gray_blood_base_probability: float = 0.015
+    gray_blood_dev_multiplier: float = 100.0
+    gray_blood_mutation_threshold: int = 20
+    gray_blood_host_population_threshold: int = 500
+    gray_blood_infection_threshold: float = 0.05
+    gray_blood_transmission_threshold: float = 0.10
+    gray_blood_host_population_loss: float = 0.18
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
 
