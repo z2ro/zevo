@@ -51,6 +51,14 @@ def test_good_environment_grows_and_hostile_environment_declines():
     assert update_population(100, hostile, 1_000, 10).delta < 0
 
 
+def test_focus_modifiers_change_population_without_mutating_traits():
+    fit = calculate_fitness(species(), habitat()).value
+    baseline = update_population(500, fit, 1_000, 70)
+    reproduction = update_population(500, fit, 1_000, 70, reproduction_modifier=1.2, survival_modifier=.8)
+    survival = update_population(500, fit, 1_000, 70, reproduction_modifier=.8, survival_modifier=1.2)
+    assert reproduction.current > baseline.current > survival.current
+
+
 def test_carrying_capacity_caps_growth_and_delta_is_bounded():
     result = update_population(990, 2.5, 1_000, 100)
     assert result.current <= 1_000

@@ -11,7 +11,8 @@ from app.config.game_balance import BALANCE
 from app.models import Habitat, Player, Species
 from app.models.enums import SpeciesStatus
 from app.schemas.species import SpeciesCreate, SpeciesPreview
-from app.simulation.fitness import preview_fitness
+from app.simulation.fitness import FitnessContext, preview_fitness
+from app.simulation.interactions import host_compatibility
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,17 @@ def _candidate(data: SpeciesCreate, creator_id: int = 0) -> Species:
 
 def preview_species(session: Session, data: SpeciesCreate) -> SpeciesPreview:
     habitat = _habitat(session, data.habitat_id)
-    return SpeciesPreview.model_validate(preview_fitness(_candidate(data), habitat))
+    candidate = _candidate(data)
+    context = FitnessContext()
+    if data.species_type.value == "PARASITIC":
+        hosts = session.scalars(select(Species).where(
+            Species.habitat_id == habitat.id, Species.status != SpeciesStatus.EXTINCT,
+            Species.population > 0,
+        ))
+        context = FitnessContext(host_compatibility=max(
+            (host_compatibility(candidate, host).score for host in hosts), default=0.0
+        ))
+    return SpeciesPreview.model_validate(preview_fitness(candidate, habitat, context))
 
 
 def create_species(session: Session, player_id: int, data: SpeciesCreate) -> Species:

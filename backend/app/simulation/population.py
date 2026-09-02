@@ -23,6 +23,8 @@ def update_population(
     reproduction_rate: int,
     *,
     balance: BalanceConfig = BALANCE,
+    reproduction_modifier: float = 1.0,
+    survival_modifier: float = 1.0,
 ) -> PopulationResult:
     if population <= 0:
         return PopulationResult(max(0, population), 0, 0, 0, 0)
@@ -34,7 +36,8 @@ def update_population(
     raw_rate = responsiveness * (fitness - 1.0) * capacity_pressure
     if density > 1.0:
         raw_rate -= min(balance.overcapacity_pressure_max, (density - 1.0) * balance.overcapacity_pressure_factor)
-    rate = clamp(raw_rate, -balance.population_delta_limit, balance.population_delta_limit)
+    rate = raw_rate * (reproduction_modifier if raw_rate >= 0 else survival_modifier)
+    rate = clamp(rate, -balance.population_delta_limit, balance.population_delta_limit)
     delta = round(population * rate)
     # Carrying capacity applies smooth pressure without bypassing the absolute
     # per-tick delta bound for an already over-capacity population.

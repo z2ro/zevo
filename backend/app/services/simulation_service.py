@@ -19,7 +19,7 @@ from app.simulation.interactions import evaluate_parasitism, fitness_context_for
 from app.simulation.common import enum_value
 from app.events.definitions import evaluate_tick_events
 from app.simulation.bots import run_bots
-from app.services.action_service import complete_due_focuses, complete_due_migrations
+from app.services.action_service import active_focus_modifiers, complete_due_focuses, complete_due_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,11 @@ class SimulationService:
 
         for species in species_list:
             habitat = habitats[species.habitat_id]
-            result = simulate_species(species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode)
+            focus = active_focus_modifiers(session, species.id, next_tick)
+            result = simulate_species(
+                species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode,
+                reproduction_modifier=focus["reproduction"], survival_modifier=focus["survival"],
+            )
             species.generation += self.settings.generations_per_tick
             if result.mutation:
                 mutations += 1
@@ -98,14 +102,15 @@ class SimulationService:
                 extinctions += 1
                 species.extinct_at = datetime.now(timezone.utc)
                 logger.info("species_extinct world_id=%s species_id=%s generation=%s", world.id, species.id, generation)
+        self._apply_species_environment(world, species_list)
+        world.generation = generation
+        evaluate_tick_events(session, world, species_list, rng, self.settings.dev_mode, mutation_results)
+        extinctions += self._reconcile_extinctions(species_list)
+        for species in species_list:
             session.add(SpeciesPopulationSnapshot(
                 species_id=species.id, generation=species.generation, population=species.population,
                 fitness=species.fitness, traits=trait_values(species),
             ))
-
-        self._apply_species_environment(world, species_list)
-        world.generation = generation
-        evaluate_tick_events(session, world, species_list, rng, self.settings.dev_mode, mutation_results)
         session.add(WorldSnapshot(
             world_id=world.id, generation=generation, tick=next_tick,
             temperature=world.temperature, oxygen=world.oxygen, co2=world.co2, radiation=world.radiation,
@@ -116,6 +121,19 @@ class SimulationService:
             world.id, next_tick, generation, len(species_list), mutations, extinctions,
         )
         return TickSummary(world.id, next_tick, generation, len(species_list), mutations, extinctions)
+
+    @staticmethod
+    def _reconcile_extinctions(species_list: list[Species]) -> int:
+        now = datetime.now(timezone.utc)
+        count = 0
+        for species in species_list:
+            if species.status != SpeciesStatus.EXTINCT and species.population < BALANCE.extinction_threshold:
+                species.population = 0
+                species.status = SpeciesStatus.EXTINCT
+                species.is_player_controlled = False
+                species.extinct_at = species.extinct_at or now
+                count += 1
+        return count
 
     @staticmethod
     def _apply_species_environment(world: World, species_list: list[Species]) -> None:

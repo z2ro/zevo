@@ -28,11 +28,14 @@ def simulate_species(
     context: FitnessContext = FitnessContext(),
     balance: BalanceConfig = BALANCE,
     dev_mode: bool = False,
+    reproduction_modifier: float = 1.0,
+    survival_modifier: float = 1.0,
 ) -> SpeciesTickResult:
     fitness = calculate_fitness(species, habitat, context, balance=balance).value
     population = update_population(
         getattr(species, "population"), fitness, getattr(habitat, "carrying_capacity"),
         getattr(species, "reproduction_rate"), balance=balance,
+        reproduction_modifier=reproduction_modifier, survival_modifier=survival_modifier,
     )
     species.fitness = fitness
     species.population = population.current

@@ -53,7 +53,7 @@ def raises_code(code, callable_):
 
 def test_migration_is_pending_then_completes_with_mortality(session):
     world, source, destination, player, species = setup_state(session)
-    action = queue_migration(session, player.id, species.id, destination.id, 0.5)
+    action = queue_migration(session, player.id, species.id, destination.id)
     assert action.status is ActionStatus.PENDING
     assert action.execute_at_tick == world.tick + BALANCE.migration_duration_ticks
     assert species.habitat_id == source.id
@@ -62,15 +62,14 @@ def test_migration_is_pending_then_completes_with_mortality(session):
     assert completed == [action]
     assert action.status is ActionStatus.COMPLETED
     assert species.habitat_id == destination.id
-    assert species.population == 460
+    assert species.population == round(1_000 * (1 - BALANCE.migration_mortality))
 
 
-def test_migration_validates_fraction_destination_and_duplicate(session):
+def test_migration_validates_destination_and_duplicate(session):
     world, source, destination, player, species = setup_state(session)
-    raises_code("invalid_population_fraction", lambda: queue_migration(session, player.id, species.id, destination.id, 0))
-    raises_code("same_habitat", lambda: queue_migration(session, player.id, species.id, source.id, 1))
-    queue_migration(session, player.id, species.id, destination.id, 1)
-    raises_code("migration_pending", lambda: queue_migration(session, player.id, species.id, destination.id, 1))
+    raises_code("same_habitat", lambda: queue_migration(session, player.id, species.id, source.id))
+    queue_migration(session, player.id, species.id, destination.id)
+    raises_code("migration_pending", lambda: queue_migration(session, player.id, species.id, destination.id))
 
 
 def test_split_applies_loss_and_persists_founder_effect(session):
@@ -153,4 +152,4 @@ def test_only_current_active_species_accepts_actions(session):
     species.status = SpeciesStatus.WILD
     species.is_player_controlled = False
     session.flush()
-    raises_code("species_not_controlled", lambda: queue_migration(session, player.id, species.id, destination.id, 1))
+    raises_code("species_not_controlled", lambda: queue_migration(session, player.id, species.id, destination.id))

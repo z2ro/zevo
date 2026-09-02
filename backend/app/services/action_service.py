@@ -41,9 +41,7 @@ def _world_for_habitat(session: Session, habitat_id: int) -> World:
     return world
 
 
-def queue_migration(session: Session, player_id: int, species_id: int, destination_habitat_id: int, population_fraction: float) -> PlayerAction:
-    if not 0 < population_fraction <= 1:
-        raise ActionServiceError("invalid_population_fraction", "Migration fraction must be in (0, 1]")
+def queue_migration(session: Session, player_id: int, species_id: int, destination_habitat_id: int) -> PlayerAction:
     species = _controlled_species(session, player_id, species_id)
     destination = session.get(Habitat, destination_habitat_id)
     if destination is None:
@@ -62,8 +60,7 @@ def queue_migration(session: Session, player_id: int, species_id: int, destinati
     action = PlayerAction(
         player_id=player_id, species_id=species.id, action_type=ActionType.MIGRATE,
         status=ActionStatus.PENDING, execute_at_tick=world.tick + BALANCE.migration_duration_ticks,
-        payload={"origin_habitat_id": species.habitat_id, "destination_habitat_id": destination.id,
-                 "population_fraction": population_fraction},
+        payload={"origin_habitat_id": species.habitat_id, "destination_habitat_id": destination.id},
     )
     session.add(action); session.flush()
     return action
@@ -87,7 +84,7 @@ def complete_due_migrations(session: Session, world_id: int, current_tick: int) 
             action.status = ActionStatus.FAILED
             action.completed_at = datetime.now(timezone.utc)
             continue
-        species.population = migration_population(species.population, float(action.payload["population_fraction"]))
+        species.population = migration_population(species.population)
         species.habitat_id = destination.id
         action.status = ActionStatus.COMPLETED
         action.completed_at = datetime.now(timezone.utc)

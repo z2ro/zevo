@@ -13,9 +13,9 @@ class FounderChange:
     new_value: int
 
 
-def migration_population(population: int, fraction: float, *, balance: BalanceConfig = BALANCE) -> int:
-    """Population arriving in the destination in the single-population MVP."""
-    return max(0, round(population * fraction * (1.0 - balance.migration_mortality)))
+def migration_population(population: int, *, balance: BalanceConfig = BALANCE) -> int:
+    """All population migrates; only configured transit mortality is applied."""
+    return max(0, round(population * (1.0 - balance.migration_mortality)))
 
 
 def split_population(population: int, fraction: float, *, balance: BalanceConfig = BALANCE) -> int:

@@ -51,8 +51,13 @@ async def test_health_world_and_species_flow(monkeypatch):
     focus = (await client.post(f"/api/species/{created_json['id']}/focus-reproduction")).json()
     assert "payload" in focus and "metadata" not in focus
     migration = (await client.post(f"/api/species/{created_json['id']}/migrate", json={
-        "destination_habitat_id": habitat_items[1]["id"], "population_fraction": .1})).json()
+        "destination_habitat_id": habitat_items[1]["id"]})).json()
     assert "payload" in migration
+    duplicate = await client.post("/api/species", json=payload)
+    assert duplicate.status_code == 409 and set(duplicate.json()) == {"error"}
+    assert duplicate.json()["error"]["code"] == "controlled_species_exists"
+    invalid = await client.post("/api/species", json={"name": "incomplete"})
+    assert invalid.status_code == 422 and invalid.json()["error"]["code"] == "validation_error"
     assert (await client.get("/api/players/current")).json()["current_species_id"] == created_json["id"]
     legacy = (await client.get("/api/legacy")).json()
     assert {"active", "wild", "extinct", "total_population", "world_firsts"} <= legacy.keys()

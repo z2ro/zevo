@@ -3,9 +3,11 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,22 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Zevo", version="0.1.0", lifespan=lifespan)
 
 
+@app.exception_handler(HTTPException)
+async def http_error(_: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, dict) and "error" in exc.detail else {
+        "error": {"code": "not_found" if exc.status_code == 404 else "http_error",
+                   "message": str(exc.detail), "details": {}}
+    }
+    return JSONResponse(status_code=exc.status_code, content=detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"error": {
+        "code": "validation_error", "message": "Invalid request", "details": {"errors": jsonable_encoder(exc.errors())}
+    }})
+
+
 async def db_dependency():
     with get_session_factory()() as session:
         yield session
@@ -42,13 +60,15 @@ Db = Annotated[Session, Depends(db_dependency)]
 
 
 class MigrationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     destination_habitat_id: int
-    population_fraction: float = Field(gt=0, le=1)
 
 
 class SplitBody(BaseModel): population_fraction: float = Field(gt=0, lt=1)
 class StrategyBody(BaseModel): strategy: Strategy
-class SimulateBody(BaseModel): ticks: int = Field(ge=1, le=1000)
+class SimulateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ticks: int = Field(ge=1, le=1000)
 
 
 TRAIT_FIELDS = (
@@ -179,7 +199,7 @@ def action(call, db: Session):
 
 
 @app.post("/api/species/{species_id}/migrate", status_code=202)
-async def migrate(species_id: int, body: MigrationBody, db: Db): return action(lambda: queue_migration(db, zero(db).id, species_id, body.destination_habitat_id, body.population_fraction), db)
+async def migrate(species_id: int, body: MigrationBody, db: Db): return action(lambda: queue_migration(db, zero(db).id, species_id, body.destination_habitat_id), db)
 
 
 @app.post("/api/species/{species_id}/split")
