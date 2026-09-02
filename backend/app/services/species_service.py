@@ -8,8 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config.game_balance import BALANCE
-from app.models import Habitat, Player, Species
-from app.models.enums import SpeciesStatus
+from app.models import Habitat, Player, PlayerAction, Species
+from app.models.enums import ActionStatus, ActionType, SpeciesStatus
 from app.schemas.species import SpeciesCreate, SpeciesPreview
 from app.simulation.fitness import FitnessContext, preview_fitness
 from app.simulation.interactions import fitness_context_for
@@ -132,5 +132,15 @@ def abandon_species(session: Session, player_id: int, species_id: int) -> Specie
     species.status = SpeciesStatus.WILD
     species.is_player_controlled = False
     species.abandoned_at = datetime.now(timezone.utc)
+    pending = session.scalars(select(PlayerAction).where(
+        PlayerAction.species_id == species.id,
+        PlayerAction.action_type.in_((ActionType.MIGRATE, ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),
+        PlayerAction.status == ActionStatus.PENDING,
+    ))
+    now = datetime.now(timezone.utc)
+    for action in pending:
+        action.status = ActionStatus.FAILED
+        action.completed_at = now
+        action.payload = {**action.payload, "failure_reason": "species_abandoned"}
     session.flush()
     return species

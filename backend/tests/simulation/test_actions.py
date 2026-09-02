@@ -13,6 +13,7 @@ from app.services.action_service import (
     ActionServiceError, active_focus_modifiers, change_strategy, complete_due_focuses,
     complete_due_migrations, queue_focus, queue_migration, split_species,
 )
+from app.services.species_service import abandon_species
 from app.simulation.actions import apply_founder_effect, focus_modifiers
 
 
@@ -72,6 +73,19 @@ def test_migration_validates_destination_and_duplicate(session):
     raises_code("migration_pending", lambda: queue_migration(session, player.id, species.id, destination.id))
 
 
+def test_abandon_fails_pending_control_actions(session):
+    world, _, destination, player, species = setup_state(session)
+    migration = queue_migration(session, player.id, species.id, destination.id)
+    focus = queue_focus(session, player.id, species.id, ActionType.FOCUS_REPRODUCTION)
+    abandon_species(session, player.id, species.id)
+    assert species.status is SpeciesStatus.WILD
+    assert migration.status is ActionStatus.FAILED and focus.status is ActionStatus.FAILED
+    assert migration.payload["failure_reason"] == "species_abandoned"
+    assert complete_due_migrations(session, world.id, world.tick + 1) == []
+    assert active_focus_modifiers(session, species.id, world.tick + 1) == {
+        "reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+
+
 def test_split_applies_loss_and_persists_founder_effect(session):
     _, _, _, player, species = setup_state(session)
     original = {name: getattr(species, name) for name in (
@@ -119,6 +133,9 @@ def test_focus_modifiers_use_injected_balance():
     custom = replace(BALANCE, focus_bonus=0.5, focus_penalty=0.4)
     assert focus_modifiers("FOCUS_REPRODUCTION", balance=custom) == {
         "reproduction_modifier": 1.5, "mortality_modifier": 1.4,
+    }
+    assert focus_modifiers("FOCUS_SURVIVAL", balance=custom) == {
+        "reproduction_modifier": 0.6, "mortality_modifier": 0.5,
     }
 
 

@@ -46,7 +46,7 @@ async def test_health_world_and_species_flow(monkeypatch):
     assert current["traits"] == created_json["traits"]
     assert "traits" in (await client.get(f"/api/species/{created_json['id']}")).json()
     assert "traits" in (await client.get("/api/species")).json()["items"][0]
-    assert "traits" in (await client.post(f"/api/species/{created_json['id']}/split", json={"population_fraction": .1})).json()
+    assert "traits" in (await client.post(f"/api/species/{created_json['id']}/split", json={})).json()
     assert "traits" in (await client.post(f"/api/species/{created_json['id']}/strategy", json={"strategy": "COMPETITOR"})).json()
     focus = (await client.post(f"/api/species/{created_json['id']}/focus-reproduction")).json()
     assert "payload" in focus and "metadata" not in focus

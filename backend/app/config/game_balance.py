@@ -64,6 +64,7 @@ class BalanceConfig:
     preview_moderate_risk_threshold: float = 0.8
     migration_mortality: float = 0.08
     split_mortality: float = 0.05
+    founder_expedition_fraction: float = 0.25
     migration_duration_ticks: int = 1
     strategy_cooldown_ticks: int = 4
     focus_duration_ticks: int = 3

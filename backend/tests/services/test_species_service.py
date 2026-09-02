@@ -85,12 +85,13 @@ def test_preview_reuses_public_simulation_shape(session):
 
 def test_create_sets_canonical_initial_state_and_prevents_second_controlled(session):
     data = SpeciesCreate.model_validate(payload())
+    preview_before = preview_species(session, data)
     created = create_species(session, 1, data)
     session.commit()
     assert created.population == 100
     assert created.status is SpeciesStatus.ACTIVE
     assert created.is_player_controlled is True
-    assert created.fitness == preview_species(session, data).estimated_fitness
+    assert created.fitness == preview_before.estimated_fitness
 
     with pytest.raises(SpeciesServiceError) as error:
         create_species(session, 1, SpeciesCreate.model_validate(payload(name="Second")))

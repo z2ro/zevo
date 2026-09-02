@@ -12,6 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
+from app.config.game_balance import BALANCE
 from app.db.bootstrap import bootstrap_world
 from app.db.session import get_session_factory
 from app.models.entities import GameEvent, Habitat, Player, PlayerAction, Species, SpeciesPopulationSnapshot, SpeciesTraitHistory, World, WorldSnapshot
@@ -64,7 +65,8 @@ class MigrationBody(BaseModel):
     destination_habitat_id: int
 
 
-class SplitBody(BaseModel): population_fraction: float = Field(gt=0, lt=1)
+class SplitBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 class StrategyBody(BaseModel): strategy: Strategy
 class SimulateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -203,7 +205,7 @@ async def migrate(species_id: int, body: MigrationBody, db: Db): return action(l
 
 
 @app.post("/api/species/{species_id}/split")
-async def split(species_id: int, body: SplitBody, db: Db): return action(lambda: split_species(db, zero(db).id, species_id, body.population_fraction), db)
+async def split(species_id: int, body: SplitBody, db: Db): return action(lambda: split_species(db, zero(db).id, species_id, BALANCE.founder_expedition_fraction), db)
 
 
 @app.post("/api/species/{species_id}/strategy")

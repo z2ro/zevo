@@ -80,9 +80,11 @@ def complete_due_migrations(session: Session, world_id: int, current_tick: int) 
     for action in actions:
         species = session.get(Species, action.species_id)
         destination = session.get(Habitat, int(action.payload["destination_habitat_id"]))
-        if species is None or destination is None or species.status is SpeciesStatus.EXTINCT:
+        if (species is None or destination is None or species.status is not SpeciesStatus.ACTIVE
+                or not species.is_player_controlled):
             action.status = ActionStatus.FAILED
             action.completed_at = datetime.now(timezone.utc)
+            action.payload = {**action.payload, "failure_reason": "species_abandoned"}
             continue
         species.population = migration_population(species.population)
         species.habitat_id = destination.id
@@ -93,7 +95,8 @@ def complete_due_migrations(session: Session, world_id: int, current_tick: int) 
     return completed
 
 
-def split_species(session: Session, player_id: int, species_id: int, population_fraction: float, *, seed: int = 0) -> Species:
+def split_species(session: Session, player_id: int, species_id: int, population_fraction: float | None = None, *, seed: int = 0) -> Species:
+    population_fraction = BALANCE.founder_expedition_fraction if population_fraction is None else population_fraction
     if not 0 < population_fraction < 1:
         raise ActionServiceError("invalid_population_fraction", "Split fraction must be in (0, 1)")
     species = _controlled_species(session, player_id, species_id)
@@ -162,6 +165,9 @@ def queue_focus(session: Session, player_id: int, species_id: int, action_type: 
 
 
 def active_focus_modifiers(session: Session, species_id: int, current_tick: int) -> dict[str, float]:
+    species = session.get(Species, species_id)
+    if species is None or species.status is not SpeciesStatus.ACTIVE or not species.is_player_controlled:
+        return {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
     action = session.scalar(select(PlayerAction).where(
         PlayerAction.species_id == species_id,
         PlayerAction.action_type.in_((ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),

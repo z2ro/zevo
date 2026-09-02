@@ -18,7 +18,7 @@ Representações canônicas: `Species` agrupa os oito traits em `traits`; `GameE
 `POST /api/species/preview` e `POST /api/species` recebem `name`, `species_type`, `energy_source`, `strategy`, `habitat_id`, `traits` (objeto com oito inteiros). Preview 200: `estimated_fitness`, `estimated_growth` (`positive|stable|negative`), `risk`, `environment_compatibility`. Criação 201 retorna Species; 409 se já controla uma.
 
 - `POST /api/species/{id}/migrate`: `{"destination_habitat_id":2}` → 202 PlayerAction; migra toda a população com mortalidade de trânsito.
-- `POST /api/species/{id}/split`: `{"population_fraction":0.25}` → 200 Species com efeito de uma Expedição Fundadora agregada (sem subpopulação).
+- `POST /api/species/{id}/split`: `{}` → 200 Species com Expedição Fundadora agregada; a fração é configurada pelo balanceamento (25% atualmente), sem subpopulação.
 - `POST /api/species/{id}/strategy`: `{"strategy":"RESISTANT"}` → 200 Species.
 - `POST /api/species/{id}/focus-reproduction` e `/focus-survival`: `{}` → 202 PlayerAction.
 - `POST /api/species/{id}/abandon`: `{}` → 200 Species WILD.
