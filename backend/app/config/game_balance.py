@@ -63,9 +63,6 @@ class BalanceConfig:
     founder_expedition_fraction: float = 0.25
     migration_duration_ticks: int = 1
     strategy_cooldown_ticks: int = 4
-    focus_duration_ticks: int = 3
-    focus_bonus: float = 0.20
-    focus_penalty: float = 0.15
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
 

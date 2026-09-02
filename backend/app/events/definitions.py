@@ -28,8 +28,7 @@ def _definition(spec, candidate: EventCandidate, world: World, rng: Random, dev_
                 world=world, species=candidate.species, host=candidate.host,
                 parasite=candidate.parasite, relation=candidate.relation,
                 event_context=context, event_service=service))
-            loss = next((abs(item["population_delta"]) for item in results if "population_delta" in item), 0)
-            return {"host_population_loss": loss, "evolutionary_pressure": "HIGH"} if loss else {"effects": results}
+            return {"effects": results}
         consequences = (CallbackConsequence("declarative_effects", apply_effects),)
 
     return EventDefinition(

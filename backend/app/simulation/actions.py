@@ -56,14 +56,10 @@ def apply_founder_effect(
     return changes
 
 
-def focus_modifiers(action_type: str, *, balance: BalanceConfig = BALANCE) -> dict[str, float]:
+def focus_modifiers(action_type: str) -> dict[str, float]:
     definition = CONTENT["actions"].get(action_type.lower())
     if definition is None:
         raise ValueError(f"Unsupported focus action: {action_type}")
-    if balance is not BALANCE:
-        if action_type == "FOCUS_REPRODUCTION":
-            return {"reproduction_modifier": 1.0 + balance.focus_bonus, "mortality_modifier": 1.0 + balance.focus_penalty}
-        return {"reproduction_modifier": 1.0 - balance.focus_penalty, "mortality_modifier": 1.0 - balance.focus_bonus}
     return dict(definition.modifiers)
 
 

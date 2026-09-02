@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-from dataclasses import replace
 from types import SimpleNamespace
 
 from sqlalchemy import select
@@ -14,7 +13,7 @@ from app.services.action_service import (
     complete_due_migrations, queue_focus, queue_migration, split_species,
 )
 from app.services.species_service import abandon_species
-from app.simulation.actions import apply_founder_effect, focus_modifiers
+from app.simulation.actions import apply_founder_effect, focus_duration, focus_modifiers
 
 
 def setup_state(session):
@@ -130,12 +129,11 @@ def test_founder_effect_changes_trait_at_upper_boundary_and_preserves_budget():
 
 
 def test_focus_modifiers_use_injected_balance():
-    custom = replace(BALANCE, focus_bonus=0.5, focus_penalty=0.4)
-    assert focus_modifiers("FOCUS_REPRODUCTION", balance=custom) == {
-        "reproduction_modifier": 1.5, "mortality_modifier": 1.4,
+    assert focus_modifiers("FOCUS_REPRODUCTION") == {
+        "reproduction_modifier": 1.2, "mortality_modifier": 1.15,
     }
-    assert focus_modifiers("FOCUS_SURVIVAL", balance=custom) == {
-        "reproduction_modifier": 0.6, "mortality_modifier": 0.5,
+    assert focus_modifiers("FOCUS_SURVIVAL") == {
+        "reproduction_modifier": 0.85, "mortality_modifier": 0.8,
     }
 
 
@@ -153,7 +151,7 @@ def test_focus_is_temporary_exclusive_and_has_tradeoff(session):
     world, _, _, player, species = setup_state(session)
     action = queue_focus(session, player.id, species.id, ActionType.FOCUS_REPRODUCTION)
     assert action.status is ActionStatus.PENDING
-    assert action.execute_at_tick == world.tick + BALANCE.focus_duration_ticks
+    assert action.execute_at_tick == world.tick + focus_duration(ActionType.FOCUS_REPRODUCTION.value)
     assert action.payload["modifiers"] == focus_modifiers("FOCUS_REPRODUCTION")
     assert action.payload["modifiers"]["reproduction_modifier"] > 1
     assert action.payload["modifiers"]["mortality_modifier"] > 1
