@@ -33,3 +33,15 @@ def test_unknown_condition_and_effect_are_rejected():
         ConditionSpec(field="unsafe.value", op="eq", value=1)
     with pytest.raises(ValueError):
         ContentDefinition(id="bad", effects=[{"type": "execute", "target": "world"}])
+
+
+@pytest.mark.parametrize("op,expected", [("eq", 3), ("neq", 4), ("gt", 2), ("gte", 3), ("lt", 4), ("lte", 3), ("in", [1, 3])])
+def test_condition_operator_dispatch(op, expected):
+    assert evaluate_condition(ConditionSpec(field="species.population", op=op, value=expected), {"species.population": 3})
+
+
+def test_invalid_in_operand_and_full_unknown_field():
+    with pytest.raises(ValueError):
+        ConditionSpec(field="species.foo", op="eq", value=1)
+    with pytest.raises(ValueError):
+        ConditionSpec(field="species.population", op="in", value=123)

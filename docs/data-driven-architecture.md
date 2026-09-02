@@ -5,6 +5,10 @@ Content = composição: `game_data/` contém IDs, thresholds, modifiers e efeito
 `backend/app/engine/content.py` valida YAML uma vez no import/startup; o tick usa
 apenas os registries em memória.
 
+Thresholds e chance base de eventos pertencem ao `game_data`; o único override
+estrutural mantido em Python é `gray_blood_dev_multiplier`, usado exclusivamente
+para tornar Gray Blood reproduzível em DEV.
+
 Para adicionar conteúdo, crie um YAML em `game_data/events`, `actions` ou
 `strategies` usando os campos validados por `ContentDefinition`. Conditions
 usam `field` + `op` (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`) e podem ser

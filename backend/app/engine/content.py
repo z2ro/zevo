@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import operator
 from app.models.enums import EventRarity, Strategy
 
 import yaml
@@ -18,6 +19,9 @@ CONDITION_FIELDS = {
     "mutation.fitness_delta",
 }
 condition_registry = frozenset(OPERATORS) | {"all", "any", "not"}
+def safe_in(actual, expected): return actual in expected
+CONDITION_OPERATORS = {"eq": operator.eq, "neq": operator.ne, "gt": operator.gt,
+                       "gte": operator.ge, "lt": operator.lt, "lte": operator.le, "in": safe_in}
 from .effects import EFFECT_HANDLERS
 effect_registry = EFFECT_HANDLERS
 
@@ -59,10 +63,12 @@ class EffectSpec(BaseModel):
             raise ValueError(f"unknown effect type: {self.type}")
         if self.target not in TARGETS:
             raise ValueError(f"unknown effect target: {self.target}")
-        if self.type == "modify_population" and not 0 <= (self.multiplier or -1) <= 10:
-            raise ValueError("population multiplier must be between 0 and 10")
-        if self.type == "add_historical_flag" and not self.flag:
-            raise ValueError("historical flag is required")
+        if self.type == "modify_population":
+            if self.multiplier is None or self.flag is not None or not 0 <= self.multiplier <= 10:
+                raise ValueError("modify_population requires only multiplier between 0 and 10")
+        if self.type == "add_historical_flag":
+            if not self.flag or self.multiplier is not None:
+                raise ValueError("add_historical_flag requires only flag")
         return self
 
 
@@ -90,8 +96,14 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"invalid content {path}: {exc}") from exc
         if definition.id in parsed:
             raise ValueError(f"duplicate content id {definition.id} in {path}")
-        if root.name == "events" and (not definition.name or not definition.description or not definition.rarity or definition.trigger is None or definition.chance is None):
-            raise ValueError(f"event content {path} requires name, description, rarity, trigger, chance")
+        if root.name == "events" and (not definition.name or not definition.description or not definition.rarity or definition.trigger is None):
+            raise ValueError(f"event content {path} requires name, description, rarity and trigger")
+        if root.name == "events" and definition.rarity == EventRarity.WORLD_FIRST.value and definition.chance is not None:
+            raise ValueError(f"world first {path} must not define chance")
+        if root.name == "events" and definition.rarity != EventRarity.WORLD_FIRST.value and definition.chance is None:
+            raise ValueError(f"probabilistic event {path} requires chance")
+        if definition.repeat_policy not in {"ALWAYS", "ONCE_PER_WORLD", "ONCE_PER_SPECIES", "ONCE_PER_PLAYER"}:
+            raise ValueError(f"unknown repeat_policy {definition.repeat_policy} in {path}")
         if root.name == "actions" and (definition.duration_ticks is None or not definition.modifiers):
             raise ValueError(f"action content {path} requires duration_ticks and modifiers")
         if root.name == "strategies" and (not definition.name or "fitness_bonus" not in definition.modifiers):
@@ -124,15 +136,8 @@ modifier_registry = CONTENT["actions"]
 def evaluate_condition(condition: ConditionSpec, values: dict[str, Any]) -> bool:
     if condition.field is not None:
         actual = values.get(condition.field)
-        expected = condition.value
-        if condition.op == "eq": return actual == expected
-        if condition.op == "neq": return actual != expected
         if actual is None: return False
-        if condition.op == "gt": return actual > expected
-        if condition.op == "gte": return actual >= expected
-        if condition.op == "lt": return actual < expected
-        if condition.op == "lte": return actual <= expected
-        return actual in expected
+        return CONDITION_OPERATORS[condition.op](actual, condition.value)
     if condition.all is not None:
         return all(evaluate_condition(item, values) for item in condition.all)
     if condition.any is not None:

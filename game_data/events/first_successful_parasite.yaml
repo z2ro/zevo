@@ -4,5 +4,4 @@ description: A parasite established a sustainable relation.
 rarity: WORLD_FIRST
 global_unique: true
 repeat_policy: ONCE_PER_WORLD
-chance: 1.0
 trigger: {field: relation.strength, op: gt, value: 0}

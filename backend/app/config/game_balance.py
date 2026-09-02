@@ -66,13 +66,7 @@ class BalanceConfig:
     focus_duration_ticks: int = 3
     focus_bonus: float = 0.20
     focus_penalty: float = 0.15
-    gray_blood_base_probability: float = 0.015
     gray_blood_dev_multiplier: float = 100.0
-    gray_blood_mutation_threshold: int = 20
-    gray_blood_host_population_threshold: int = 500
-    gray_blood_infection_threshold: float = 0.05
-    gray_blood_transmission_threshold: float = 0.10
-    gray_blood_host_population_loss: float = 0.18
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
 

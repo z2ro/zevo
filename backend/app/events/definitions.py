@@ -18,7 +18,7 @@ from .service import EventService
 def _world_first(code: str, condition) -> EventDefinition:
     spec = CONTENT["events"][code]
     return EventDefinition(code, spec.name, spec.description, EventRarity(spec.rarity), condition,
-        global_unique=spec.global_unique, repeat_policy=RepeatPolicy.ONCE_PER_WORLD,
+        global_unique=spec.global_unique, repeat_policy=RepeatPolicy(spec.repeat_policy),
         metadata_factory=lambda ctx: dict(ctx.values.get("metadata", {})))
 
 
@@ -56,12 +56,11 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
         condition = Predicate(
             "declarative_gray_blood",
             lambda c, spec=gray.trigger, vals=values: evaluate_condition(spec, vals)
-            and c.rng.random() < min(1.0, (gray.chance or 0.0) *
+            and c.rng.random() < min(1.0, gray.chance *
                                     (BALANCE.gray_blood_dev_multiplier if c.dev_mode else 1.0)),
         )
         definition = EventDefinition(
-            "GRAY_BLOOD", gray.name or "Sangue Cinza",
-            gray.description or "Uma linhagem parasitária desencadeou Sangue Cinza.",
+            "GRAY_BLOOD", gray.name, gray.description,
             EventRarity(gray.rarity), condition,
             (CallbackConsequence("declarative_effects", harm),),
             metadata_factory=lambda c, data=metadata: data,

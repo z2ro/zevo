@@ -21,7 +21,8 @@ def _target(ctx: EffectExecutionContext, name: str):
 
 def execute_modify_population(effect, ctx: EffectExecutionContext):
     target = _target(ctx, effect.target)
-    if target is None: return {"population_before": 0, "population_after": 0, "population_delta": 0}
+    if target is None:
+        raise ValueError(f"effect target '{effect.target}' is unavailable in execution context")
     before = target.population
     target.population = max(0, int(before * (effect.multiplier or 1.0)))
     return {"population_before": before, "population_after": target.population, "population_delta": target.population - before}
@@ -29,9 +30,10 @@ def execute_modify_population(effect, ctx: EffectExecutionContext):
 
 def execute_add_historical_flag(effect, ctx: EffectExecutionContext):
     target = _target(ctx, effect.target)
-    if ctx.event_service is not None and target is not None:
-        ctx.event_service.ensure_flag(ctx.event_context, effect.flag, species_id=getattr(target, "id", None),
-                                      metadata={"parasite_species_id": getattr(ctx.parasite, "id", None)})
+    if target is None or ctx.event_service is None or ctx.event_context is None:
+        raise ValueError("historical flag effect requires target, event context, and event service")
+    ctx.event_service.ensure_flag(ctx.event_context, effect.flag, species_id=getattr(target, "id", None),
+                                  metadata={"parasite_species_id": getattr(ctx.parasite, "id", None)})
     return {"historical_flag": effect.flag}
 
 
