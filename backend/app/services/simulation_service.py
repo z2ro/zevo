@@ -87,7 +87,7 @@ class SimulationService:
             focus = active_focus_modifiers(session, species.id, next_tick)
             result = simulate_species(
                 species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode,
-                reproduction_modifier=focus["reproduction"], survival_modifier=focus["survival"],
+                reproduction_modifier=focus["reproduction_modifier"], mortality_modifier=focus["mortality_modifier"],
             )
             species.generation += self.settings.generations_per_tick
             if result.mutation:

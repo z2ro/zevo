@@ -166,9 +166,9 @@ def active_focus_modifiers(session: Session, species_id: int, current_tick: int)
         PlayerAction.species_id == species_id,
         PlayerAction.action_type.in_((ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),
         PlayerAction.status == ActionStatus.PENDING,
-        PlayerAction.execute_at_tick > current_tick,
+        PlayerAction.execute_at_tick >= current_tick,
     ).order_by(PlayerAction.id.desc()))
-    return dict(action.payload["modifiers"]) if action else {"reproduction": 1.0, "survival": 1.0}
+    return dict(action.payload["modifiers"]) if action else {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
 
 def complete_due_focuses(session: Session, world_id: int, current_tick: int) -> list[PlayerAction]:
@@ -179,7 +179,7 @@ def complete_due_focuses(session: Session, world_id: int, current_tick: int) -> 
         .where(Habitat.world_id == world_id,
                PlayerAction.action_type.in_((ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),
                PlayerAction.status == ActionStatus.PENDING,
-               PlayerAction.execute_at_tick <= current_tick)
+               PlayerAction.execute_at_tick < current_tick)
         .order_by(PlayerAction.id)
         .with_for_update()
     ))

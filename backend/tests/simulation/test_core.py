@@ -54,8 +54,8 @@ def test_good_environment_grows_and_hostile_environment_declines():
 def test_focus_modifiers_change_population_without_mutating_traits():
     fit = calculate_fitness(species(), habitat()).value
     baseline = update_population(500, fit, 1_000, 70)
-    reproduction = update_population(500, fit, 1_000, 70, reproduction_modifier=1.2, survival_modifier=.8)
-    survival = update_population(500, fit, 1_000, 70, reproduction_modifier=.8, survival_modifier=1.2)
+    reproduction = update_population(500, fit, 1_000, 70, reproduction_modifier=1.2, mortality_modifier=1.2)
+    survival = update_population(500, fit, 1_000, 70, reproduction_modifier=.8, mortality_modifier=.8)
     assert reproduction.current > baseline.current > survival.current
 
 

@@ -118,7 +118,7 @@ def test_founder_effect_changes_trait_at_upper_boundary_and_preserves_budget():
 def test_focus_modifiers_use_injected_balance():
     custom = replace(BALANCE, focus_bonus=0.5, focus_penalty=0.4)
     assert focus_modifiers("FOCUS_REPRODUCTION", balance=custom) == {
-        "reproduction": 1.5, "survival": 0.6,
+        "reproduction_modifier": 1.5, "mortality_modifier": 1.4,
     }
 
 
@@ -138,13 +138,16 @@ def test_focus_is_temporary_exclusive_and_has_tradeoff(session):
     assert action.status is ActionStatus.PENDING
     assert action.execute_at_tick == world.tick + BALANCE.focus_duration_ticks
     assert action.payload["modifiers"] == focus_modifiers("FOCUS_REPRODUCTION")
-    assert action.payload["modifiers"]["reproduction"] > 1
-    assert action.payload["modifiers"]["survival"] < 1
+    assert action.payload["modifiers"]["reproduction_modifier"] > 1
+    assert action.payload["modifiers"]["mortality_modifier"] > 1
     assert active_focus_modifiers(session, species.id, world.tick) == action.payload["modifiers"]
     raises_code("focus_active", lambda: queue_focus(session, player.id, species.id, ActionType.FOCUS_SURVIVAL))
-    assert complete_due_focuses(session, world.id, action.execute_at_tick) == [action]
+    assert complete_due_focuses(session, world.id, action.execute_at_tick) == []
+    assert action.status is ActionStatus.PENDING
+    assert active_focus_modifiers(session, species.id, action.execute_at_tick) == action.payload["modifiers"]
+    assert complete_due_focuses(session, world.id, action.execute_at_tick + 1) == [action]
     assert action.status is ActionStatus.COMPLETED
-    assert active_focus_modifiers(session, species.id, action.execute_at_tick) == {"reproduction": 1.0, "survival": 1.0}
+    assert active_focus_modifiers(session, species.id, action.execute_at_tick + 1) == {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
 
 def test_only_current_active_species_accepts_actions(session):
