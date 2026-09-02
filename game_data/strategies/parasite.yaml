@@ -1,2 +1,3 @@
-id: parasite
+id: PARASITE
 name: Parasite
+modifiers: {fitness_bonus: 0.05}

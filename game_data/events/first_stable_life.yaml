@@ -1,0 +1,8 @@
+id: FIRST_STABLE_LIFE
+name: First Stable Life
+description: A species established stable life.
+rarity: WORLD_FIRST
+global_unique: true
+repeat_policy: ONCE_PER_WORLD
+chance: 1.0
+trigger: {field: species.generation, op: gte, value: 10000}

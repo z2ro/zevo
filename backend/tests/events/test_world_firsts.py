@@ -10,7 +10,7 @@ from backend.tests.simulation.conftest import session  # noqa: F401
 def test_world_first_is_once_per_world(session):
     world_id, species_id, _ = build_world(session)
     world, species = session.get(World, world_id), session.get(Species, species_id)
-    species.generation = BALANCE.stable_life_generations
+    species.generation = 10_000
     evaluate_tick_events(session, world, [species], Random(1), False, {})
     evaluate_tick_events(session, world, [species], Random(1), False, {})
     assert session.scalar(select(func.count()).select_from(GameEvent).where(

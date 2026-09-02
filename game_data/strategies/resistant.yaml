@@ -1,2 +1,3 @@
-id: resistant
+id: RESISTANT
 name: Resistant
+modifiers: {fitness_bonus: 0.10}

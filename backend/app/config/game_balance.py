@@ -38,10 +38,6 @@ class BalanceConfig:
     parasite_trait_scale: float = 200.0
     parasite_strength_weights: tuple[float, float] = (0.5, 0.5)
     energy_efficiency_base: float = 0.55
-    strategy_bonuses: dict[str, float] = field(default_factory=lambda: {
-        "COLONIZER": 0.10, "COMPETITOR": 0.08, "RESISTANT": 0.10,
-        "OPPORTUNIST": 0.06, "PARASITE": 0.05,
-    })
     growth_responsiveness_base: float = 0.08
     growth_reproduction_factor: float = 0.22
     overcapacity_pressure_max: float = 0.25
@@ -70,8 +66,6 @@ class BalanceConfig:
     focus_duration_ticks: int = 3
     focus_bonus: float = 0.20
     focus_penalty: float = 0.15
-    stable_life_generations: int = 10_000
-    major_adaptation_delta: float = 0.12
     gray_blood_base_probability: float = 0.015
     gray_blood_dev_multiplier: float = 100.0
     gray_blood_mutation_threshold: int = 20

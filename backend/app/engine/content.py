@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from app.models.enums import EventRarity, Strategy
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -10,9 +11,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 OPERATORS = {"eq", "neq", "gt", "gte", "lt", "lte", "in"}
 EFFECT_TYPES = {"modify_population", "add_historical_flag"}
 TARGETS = {"parasite", "host", "species", "world"}
-FIELD_ROOTS = {"species", "parasite", "host", "relation", "world", "player"}
+CONDITION_FIELDS = {
+    "species.generation", "species.population", "species.status", "species.species_type",
+    "species.mutation_rate", "parasite.species_type", "parasite.mutation_rate",
+    "host.population", "relation.infection_rate", "relation.transmission_rate", "relation.strength",
+    "mutation.fitness_delta",
+}
 condition_registry = frozenset(OPERATORS) | {"all", "any", "not"}
-effect_registry = frozenset(EFFECT_TYPES)
+from .effects import EFFECT_HANDLERS
+effect_registry = EFFECT_HANDLERS
 
 
 class ConditionSpec(BaseModel):
@@ -30,8 +37,10 @@ class ConditionSpec(BaseModel):
         if self.field is not None:
             if any(composite) or self.op not in OPERATORS:
                 raise ValueError("field conditions require a supported op")
-            if self.field.split(".", 1)[0] not in FIELD_ROOTS:
+            if self.field not in CONDITION_FIELDS:
                 raise ValueError(f"unknown condition field: {self.field}")
+            if self.op == "in" and not isinstance(self.value, (list, tuple, set)):
+                raise ValueError("in condition value must be a list")
         elif sum(composite) != 1:
             raise ValueError("condition must define field, all, any, or not")
         return self
@@ -63,11 +72,13 @@ class ContentDefinition(BaseModel):
     name: str | None = None
     description: str | None = None
     rarity: str | None = None
+    global_unique: bool = False
+    repeat_policy: str = "ALWAYS"
     duration_ticks: int | None = Field(default=None, ge=1)
-    modifiers: dict[str, float] = {}
+    modifiers: dict[str, float] = Field(default_factory=dict)
     trigger: ConditionSpec | None = None
     chance: float | None = Field(default=None, ge=0, le=1)
-    effects: list[EffectSpec] = []
+    effects: list[EffectSpec] = Field(default_factory=list)
 
 
 def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
@@ -79,19 +90,31 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"invalid content {path}: {exc}") from exc
         if definition.id in parsed:
             raise ValueError(f"duplicate content id {definition.id} in {path}")
+        if root.name == "events" and (not definition.name or not definition.description or not definition.rarity or definition.trigger is None or definition.chance is None):
+            raise ValueError(f"event content {path} requires name, description, rarity, trigger, chance")
+        if root.name == "actions" and (definition.duration_ticks is None or not definition.modifiers):
+            raise ValueError(f"action content {path} requires duration_ticks and modifiers")
+        if root.name == "strategies" and (not definition.name or "fitness_bonus" not in definition.modifiers):
+            raise ValueError(f"strategy content {path} requires name and fitness_bonus")
+        if definition.rarity and definition.rarity not in {item.value for item in EventRarity}:
+            raise ValueError(f"unknown event rarity {definition.rarity} in {path}")
         parsed[definition.id] = definition
     return parsed
 
 
-def load_content(paths: list[Path] | None = None) -> dict[str, dict[str, ContentDefinition]]:
-    root = (paths or [Path(__file__).resolve().parents[3] / "game_data", Path("/app/game_data")])[0]
-    if not root.exists() and len(paths or []) == 0:
+def load_content(root: Path | None = None) -> dict[str, dict[str, ContentDefinition]]:
+    root = root or Path(__file__).resolve().parents[3] / "game_data"
+    if not root.exists():
         root = Path("/app/game_data")
-    return {
+    result = {
         "events": _load_directory(root / "events", "*.yaml"),
         "actions": _load_directory(root / "actions", "*.yaml"),
         "strategies": _load_directory(root / "strategies", "*.yaml"),
     }
+    expected = {item.value for item in Strategy}
+    if set(result["strategies"]) != expected:
+        raise ValueError(f"strategy content must exactly cover {sorted(expected)}")
+    return result
 
 
 CONTENT = load_content()

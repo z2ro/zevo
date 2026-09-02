@@ -9,14 +9,16 @@ from app.engine import CONTENT
 from app.engine.content import evaluate_condition
 from app.models.entities import Player, Species, SpeciesRelation, World
 from app.models.enums import EventRarity, RelationType, SpeciesStatus, SpeciesType
-from .conditions import All, Predicate, RandomRoll
+from .conditions import Predicate
+from app.engine.effects import EffectExecutionContext, execute_effects
 from .core import CallbackConsequence, EventContext, EventDefinition, RepeatPolicy
 from .service import EventService
 
 
-def _world_first(code: str, name: str, condition) -> EventDefinition:
-    return EventDefinition(code, name, name, EventRarity.WORLD_FIRST, condition,
-        global_unique=True, repeat_policy=RepeatPolicy.ONCE_PER_WORLD,
+def _world_first(code: str, condition) -> EventDefinition:
+    spec = CONTENT["events"][code]
+    return EventDefinition(code, spec.name, spec.description, EventRarity(spec.rarity), condition,
+        global_unique=spec.global_unique, repeat_policy=RepeatPolicy.ONCE_PER_WORLD,
         metadata_factory=lambda ctx: dict(ctx.values.get("metadata", {})))
 
 
@@ -35,15 +37,10 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
             continue
 
         def harm(ctx, target=host, source=parasite):
-            loss = 0
-            for effect in gray.effects:
-                if effect.type == "modify_population" and effect.target == "host":
-                    before = target.population
-                    target.population = max(0, int(before * (effect.multiplier or 1.0)))
-                    loss = before - target.population
-                elif effect.type == "add_historical_flag" and effect.target == "host":
-                    service.ensure_flag(ctx, effect.flag, species_id=target.id,
-                                        metadata={"parasite_species_id": source.id})
+            results = execute_effects(gray.effects, EffectExecutionContext(
+                world=world, species=source, host=target, parasite=source,
+                relation=relation, event_context=ctx, event_service=service))
+            loss = next((abs(result["population_delta"]) for result in results if "population_delta" in result), 0)
             return {"host_population_loss": loss, "evolutionary_pressure": "HIGH"}
 
         metadata = {"parasite_species_id": parasite.id, "host_species_id": host.id,
@@ -65,7 +62,7 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
         definition = EventDefinition(
             "GRAY_BLOOD", gray.name or "Sangue Cinza",
             gray.description or "Uma linhagem parasitária desencadeou Sangue Cinza.",
-            EventRarity.LEGENDARY, condition,
+            EventRarity(gray.rarity), condition,
             (CallbackConsequence("declarative_effects", harm),),
             metadata_factory=lambda c, data=metadata: data,
         )
@@ -73,16 +70,20 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
             definition, context, idempotency_key=f"{world.tick}:{parasite.id}:{host.id}").persisted)
 
     candidates = sorted(living.values(), key=lambda item: item.id)
-    stable = next((s for s in candidates if s.generation >= BALANCE.stable_life_generations), None)
-    successful = next((living.get(r.predator_or_parasite_id) for r in relations if r.strength > 0), None)
+    stable_spec = CONTENT["events"]["FIRST_STABLE_LIFE"]
+    stable = next((s for s in candidates if evaluate_condition(stable_spec.trigger, {"species.generation": s.generation})), None)
+    successful_relation = next((r for r in relations if r.strength > 0 and living.get(r.predator_or_parasite_id)), None)
+    successful = living.get(successful_relation.predator_or_parasite_id) if successful_relation else None
+    major_spec = CONTENT["events"]["FIRST_MAJOR_ADAPTATION"]
     major = next((living.get(sid) for sid, change in mutations.items()
-                  if change.fitness_after - change.fitness_before >= BALANCE.major_adaptation_delta), None)
-    for definition, subject in (
-        (_world_first("FIRST_STABLE_LIFE", "First Stable Life", Predicate("stable", lambda _: stable is not None)), stable),
-        (_world_first("FIRST_SUCCESSFUL_PARASITE", "First Successful Parasite", Predicate("parasite", lambda _: successful is not None)), successful),
-        (_world_first("FIRST_MAJOR_ADAPTATION", "First Major Adaptation", Predicate("adaptation", lambda _: major is not None)), major),
-    ):
+                  if evaluate_condition(major_spec.trigger, {"mutation.fitness_delta": change.fitness_after - change.fitness_before})), None)
+    firsts = (("FIRST_STABLE_LIFE", stable, {"species.generation": getattr(stable, "generation", None)}),
+              ("FIRST_SUCCESSFUL_PARASITE", successful, {"relation.strength": getattr(successful_relation, "strength", None)}),
+              ("FIRST_MAJOR_ADAPTATION", major, {"mutation.fitness_delta": (major and mutations[major.id].fitness_after - mutations[major.id].fitness_before)}))
+    for code, subject, values in firsts:
         if subject:
+            spec = CONTENT["events"][code]
+            definition = _world_first(code, Predicate(code, lambda _, spec=spec, values=values: evaluate_condition(spec.trigger, values)))
             context = EventContext(world, rng, dev_mode, subject, players.get(subject.creator_id),
                 {"metadata": {"species_id": subject.id, "player_id": subject.creator_id}})
             created += int(service.evaluate_and_persist(definition, context).persisted)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.config.game_balance import BALANCE, BalanceConfig
+from app.engine import CONTENT
 
 from .common import clamp, enum_value
 
@@ -52,7 +53,8 @@ def calculate_fitness(
     metabolic = getattr(species, "metabolic_efficiency") / 100.0
     reproduction = getattr(species, "reproduction_rate") / 100.0
     structural = getattr(species, "structural_resistance") / 100.0
-    strategy = balance.strategy_bonuses.get(enum_value(getattr(species, "strategy")), 0.0)
+    strategy = CONTENT["strategies"].get(enum_value(getattr(species, "strategy")), None)
+    strategy = strategy.modifiers.get("fitness_bonus", 0.0) if strategy else 0.0
 
     # Center the normalized score around fitness=1 so good environments grow and
     # hostile combinations decline, while retaining a bounded public value.

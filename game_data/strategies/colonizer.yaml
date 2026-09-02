@@ -1,2 +1,3 @@
-id: colonizer
+id: COLONIZER
 name: Colonizer
+modifiers: {fitness_bonus: 0.10}

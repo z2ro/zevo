@@ -1,2 +1,3 @@
-id: competitor
+id: COMPETITOR
 name: Competitor
+modifiers: {fitness_bonus: 0.08}

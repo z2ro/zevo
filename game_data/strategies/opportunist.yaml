@@ -1,2 +1,3 @@
-id: opportunist
+id: OPPORTUNIST
 name: Opportunist
+modifiers: {fitness_bonus: 0.06}
