@@ -1,4 +1,5 @@
 id: FIRST_SUCCESSFUL_PARASITE
+scope: PARASITISM_RELATION
 name: First Successful Parasite
 description: A parasite established a sustainable relation.
 rarity: WORLD_FIRST

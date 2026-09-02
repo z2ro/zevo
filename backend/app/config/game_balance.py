@@ -66,7 +66,6 @@ class BalanceConfig:
     focus_duration_ticks: int = 3
     focus_bonus: float = 0.20
     focus_penalty: float = 0.15
-    gray_blood_dev_multiplier: float = 100.0
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
 

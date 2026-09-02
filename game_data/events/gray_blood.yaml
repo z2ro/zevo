@@ -1,4 +1,5 @@
-id: gray_blood
+id: GRAY_BLOOD
+scope: PARASITISM_RELATION
 name: Sangue Cinza
 description: Uma linhagem parasitária desencadeou Sangue Cinza.
 rarity: LEGENDARY
@@ -20,6 +21,7 @@ trigger:
       op: gte
       value: 0.10
 chance: 0.015
+dev_chance_multiplier: 100
 effects:
   - type: modify_population
     target: host

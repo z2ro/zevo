@@ -18,6 +18,7 @@ CONDITION_FIELDS = {
     "host.population", "relation.infection_rate", "relation.transmission_rate", "relation.strength",
     "mutation.fitness_delta",
 }
+EVENT_SCOPES = {"SPECIES", "PARASITISM_RELATION", "MUTATION"}
 condition_registry = frozenset(OPERATORS) | {"all", "any", "not"}
 def safe_in(actual, expected): return actual in expected
 CONDITION_OPERATORS = {"eq": operator.eq, "neq": operator.ne, "gt": operator.gt,
@@ -78,12 +79,14 @@ class ContentDefinition(BaseModel):
     name: str | None = None
     description: str | None = None
     rarity: str | None = None
+    scope: str | None = None
     global_unique: bool = False
     repeat_policy: str = "ALWAYS"
     duration_ticks: int | None = Field(default=None, ge=1)
     modifiers: dict[str, float] = Field(default_factory=dict)
     trigger: ConditionSpec | None = None
     chance: float | None = Field(default=None, ge=0, le=1)
+    dev_chance_multiplier: float = Field(default=1.0, ge=1)
     effects: list[EffectSpec] = Field(default_factory=list)
 
 
@@ -98,6 +101,10 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"duplicate content id {definition.id} in {path}")
         if root.name == "events" and (not definition.name or not definition.description or not definition.rarity or definition.trigger is None):
             raise ValueError(f"event content {path} requires name, description, rarity and trigger")
+        if root.name == "events" and definition.scope not in EVENT_SCOPES:
+            raise ValueError(f"event content {path} requires a valid scope")
+        if root.name != "events" and definition.scope is not None:
+            raise ValueError(f"only events may define scope: {path}")
         if root.name == "events" and definition.rarity == EventRarity.WORLD_FIRST.value and definition.chance is not None:
             raise ValueError(f"world first {path} must not define chance")
         if root.name == "events" and definition.rarity != EventRarity.WORLD_FIRST.value and definition.chance is None:
