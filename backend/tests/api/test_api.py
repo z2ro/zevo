@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -8,6 +8,8 @@ from app.db.base import Base
 from app.db.bootstrap import bootstrap_world
 from app.main import app, db_dependency
 from app.config.settings import get_settings
+from app.models.entities import GameEvent, Player, World
+from app.models.enums import EventRarity
 
 
 @pytest.fixture
@@ -26,7 +28,9 @@ async def test_health_world_and_species_flow(monkeypatch):
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     assert (await client.get("/health")).status_code == 200
     assert (await client.get("/api/world")).json()["name"] == "Eos-1"
-    habitat = (await client.get("/api/habitats")).json()["items"][0]["id"]
+    assert (await client.get("/api/players/current")).json()["current_species_id"] is None
+    habitat_items = (await client.get("/api/habitats")).json()["items"]
+    habitat = habitat_items[0]["id"]
     payload = {"name": "Prima", "species_type": "AUTOTROPH", "energy_source": "SOLAR",
         "strategy": "COLONIZER", "habitat_id": habitat, "traits": {
             "thermal_tolerance": 12, "radiation_tolerance": 12, "ph_tolerance": 12,
@@ -35,7 +39,45 @@ async def test_health_world_and_species_flow(monkeypatch):
     assert (await client.post("/api/species/preview", json=payload)).status_code == 200
     created = await client.post("/api/species", json=payload)
     assert created.status_code == 201
-    assert (await client.post(f"/api/species/{created.json()['id']}/abandon")).json()["status"] == "WILD"
+    created_json = created.json()
+    assert created_json["traits"]["thermal_tolerance"] == 12
+    assert "thermal_tolerance" not in created_json
+    current = (await client.get("/api/species/current")).json()
+    assert current["traits"] == created_json["traits"]
+    assert "traits" in (await client.get(f"/api/species/{created_json['id']}")).json()
+    assert "traits" in (await client.get("/api/species")).json()["items"][0]
+    assert "traits" in (await client.post(f"/api/species/{created_json['id']}/split", json={"population_fraction": .1})).json()
+    assert "traits" in (await client.post(f"/api/species/{created_json['id']}/strategy", json={"strategy": "COMPETITOR"})).json()
+    focus = (await client.post(f"/api/species/{created_json['id']}/focus-reproduction")).json()
+    assert "payload" in focus and "metadata" not in focus
+    migration = (await client.post(f"/api/species/{created_json['id']}/migrate", json={
+        "destination_habitat_id": habitat_items[1]["id"], "population_fraction": .1})).json()
+    assert "payload" in migration
+    assert (await client.get("/api/players/current")).json()["current_species_id"] == created_json["id"]
+    legacy = (await client.get("/api/legacy")).json()
+    assert {"active", "wild", "extinct", "total_population", "world_firsts"} <= legacy.keys()
+    assert legacy["active"] == 1 and legacy["wild"] == 0
+
+    with factory() as event_session:
+        player = event_session.scalar(select(Player).where(Player.username == "Zero"))
+        eos = event_session.scalar(select(World).where(World.name == "Eos-1"))
+        event_session.add(GameEvent(world_id=eos.id, code="TEST_FIRST", name="Test First",
+            description="Contract event", rarity=EventRarity.WORLD_FIRST, generation=eos.generation,
+            historical=True, global_unique=True, repeat_scope="WORLD", player_id=player.id,
+            species_id=created_json["id"], event_metadata={"source": "test"}))
+        event_session.commit()
+    event = (await client.get("/api/events")).json()["items"][0]
+    assert event["metadata"] == {"source": "test"} and "event_metadata" not in event
+    assert (await client.get("/api/world/history")).json()["items"][0]["metadata"] == {"source": "test"}
+    assert (await client.get("/api/legacy")).json()["world_firsts"][0]["metadata"] == {"source": "test"}
+
+    abandoned = (await client.post(f"/api/species/{created_json['id']}/abandon")).json()
+    assert abandoned["status"] == "WILD" and "traits" in abandoned
+    payload["name"] = "Secunda"
+    second = await client.post("/api/species", json=payload)
+    assert second.status_code == 201
+    all_species = (await client.get("/api/world/species")).json()["items"]
+    assert any(s["id"] == created_json["id"] and s["status"] == "WILD" and "traits" in s for s in all_species)
     assert (await client.post("/api/dev/simulate", json={"ticks": 1})).status_code == 404
     monkeypatch.setenv("DEV_MODE", "true"); get_settings.cache_clear()
     assert (await client.post("/api/dev/simulate", json={"ticks": 1})).json()["tick"] == 1

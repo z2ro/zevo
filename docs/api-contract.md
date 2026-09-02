@@ -2,7 +2,7 @@
 
 Base `/api`; JSON `snake_case`; UTC; IDs inteiros opacos. Erros: `{"error":{"code":"...","message":"...","details":{}}}`. Use 400 semântica, 404 ausente, 409 invariante, 422 formato. Player corrente é Zero sem autenticação.
 
-Representações canônicas: `Species` expõe todos os campos e oito traits de `domain-model.md`; `World` expõe Eos-1, generation, tick, parâmetros, contagens, `dev_mode`; listas usam `{"items":[]}`. Histórico expõe `kind`, generation, title, description, species/player e metadata.
+Representações canônicas: `Species` agrupa os oito traits em `traits`; `GameEvent` expõe a coluna interna `event_metadata` como `metadata`; `PlayerAction` usa `payload`; `Player` inclui `current_species_id`. `World` expõe Eos-1, generation, tick, parâmetros, contagens e `dev_mode`; listas usam `{"items":[]}`.
 
 ## Leituras
 
@@ -10,6 +10,8 @@ Representações canônicas: `Species` expõe todos os campos e oito traits de `
 - `GET /api/world`, `/api/world/species`, `/api/world/history?limit=100`, `/api/habitats`.
 - `GET /api/species`, `/api/species/current` (404 se nenhuma), `/api/species/{id}`.
 - `GET /api/events?limit=100`, `/api/legacy`, `/api/players/current`.
+
+`GET /api/legacy` retorna `total_species`, `active`, `wild`, `extinct`, `total_population`, `species` e `world_firsts` do jogador Zero.
 
 ## Espécies e ações
 
@@ -25,6 +27,6 @@ Somente espécie corrente aceita comandos; caso contrário 409. Frações são `
 
 ## DEV
 
-`POST /api/dev/simulate` recebe `{"ticks":1..1000,"evaluate_events":true}` e retorna World. Apenas `DEV_MODE=true`; fora dele retorna 404. Chamadas são serializadas com o scheduler.
+`POST /api/dev/simulate` recebe apenas `{"ticks":1..1000}` e retorna World. Apenas `DEV_MODE=true`; fora dele retorna 404. Chamadas são serializadas com o scheduler.
 
-Campos incompatíveis exigem atualização deste documento e handoff; o frontend não replica cálculo canônico.
+Campos incompatíveis exigem atualização deste documento; o frontend não replica cálculo canônico.

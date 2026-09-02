@@ -40,7 +40,7 @@ export interface Habitat {
 export interface Player { id: number; username: string; current_species_id: number | null; }
 export interface GameEvent { id: number; code: string; name: string; description: string; rarity: string; triggered_at: string; generation: number; historical: boolean; global_unique: boolean; metadata: Record<string, unknown>; }
 export interface HistoryEntry { kind: string; generation: number; title: string; description: string; species_id?: number; player_id?: number; metadata: Record<string, unknown>; }
-export interface PlayerAction { id: number; action_type: string; status: string; species_id: number; metadata: Record<string, unknown>; }
+export interface PlayerAction { id: number; action_type: string; status: string; species_id: number; payload: Record<string, unknown>; }
 export interface ListResponse<T> { items: T[]; }
 export interface SpeciesInput { name: string; species_type: SpeciesType; energy_source: EnergySource; strategy: Strategy; habitat_id: number; traits: Traits; }
 export interface ViabilityPreview { estimated_fitness: number; estimated_growth: GrowthTrend; risk: string; environment_compatibility: number; }

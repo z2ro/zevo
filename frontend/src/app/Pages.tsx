@@ -1,7 +1,7 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { gameApi } from "../api/gameApi";
-import type { EnergySource, Habitat, SpeciesInput, SpeciesType, Strategy, Traits } from "../types/api";
+import type { EnergySource, Habitat, Species, SpeciesInput, SpeciesType, Strategy, Traits } from "../types/api";
 import { AsyncState } from "./AsyncState";
 import { usePolling } from "./usePolling";
 
@@ -11,7 +11,7 @@ const n = (value: number, digits = 1) => Number(value ?? 0).toLocaleString("pt-B
 
 function Title({ children }: { children: string }) { return <><p className="eyebrow">Eos-1</p><h1>{children}</h1></>; }
 function Stat({ label, value }: { label: string; value: string | number }) { return <div className="stat"><small>{label}</small><strong>{value}</strong></div>; }
-function SpeciesCard({ species }: { species: any }) { return <article className="card"><div className="row"><h3>{species.name}</h3><span className={`badge ${species.status.toLowerCase()}`}>{species.status}</span></div><p>{species.species_type} · {species.strategy}</p><div className="stats"><Stat label="População" value={n(species.population, 0)} /><Stat label="Fitness" value={n(species.fitness, 2)} /><Stat label="Geração" value={n(species.generation, 0)} /></div>{species.status === "WILD" && <p className="warning">Não é mais controlada por você.</p>}<Link to={`/species/${species.id}`}>Ver espécie →</Link></article>; }
+function SpeciesCard({ species }: { species: Species }) { return <article className="card"><div className="row"><h3>{species.name}</h3><span className={`badge ${species.status.toLowerCase()}`}>{species.status}</span></div><p>{species.species_type} · {species.strategy}</p><div className="stats"><Stat label="População" value={n(species.population, 0)} /><Stat label="Fitness" value={n(species.fitness, 2)} /><Stat label="Geração" value={n(species.generation, 0)} /></div>{species.status === "WILD" && <p className="warning">Não é mais controlada por você.</p>}<Link to={`/species/${species.id}`}>Ver espécie →</Link></article>; }
 
 export function Dashboard() {
   const world = usePolling(gameApi.world); const current = usePolling(async () => { try { return await gameApi.currentSpecies(); } catch (e: any) { if (e.status === 404) return null; throw e; } });
@@ -23,9 +23,14 @@ function DevTools({ onDone }: { onDone: () => void }) { const [busy, setBusy] = 
 
 export function CreateSpecies() {
   const habitats = usePolling(gameApi.habitats); const navigate = useNavigate();
-  const [input, setInput] = useState<SpeciesInput>({ name: "", species_type: "AUTOTROPH", energy_source: "SOLAR", strategy: "COLONIZER", habitat_id: 1, traits: initialTraits });
+  const [input, setInput] = useState<SpeciesInput>({ name: "", species_type: "AUTOTROPH", energy_source: "SOLAR", strategy: "COLONIZER", habitat_id: 0, traits: initialTraits });
   const [preview, setPreview] = useState<any>(null); const [error, setError] = useState(""); const points = Object.values(input.traits).reduce((a, b) => a + b, 0);
   const change = (key: keyof SpeciesInput, value: unknown) => { setInput({ ...input, [key]: value }); setPreview(null); };
+  useEffect(() => {
+    const items = habitats.data?.items ?? [];
+    if (items.length && !items.some(h => h.id === input.habitat_id))
+      setInput(current => ({ ...current, habitat_id: items[0].id }));
+  }, [habitats.data, input.habitat_id]);
   const submit = async (e: FormEvent) => { e.preventDefault(); setError(""); try { const created = await gameApi.createSpecies(input); navigate(`/species/${created.id}`); } catch (x) { setError(x instanceof Error ? x.message : "Falha ao criar"); } };
   const previewNow = async () => { setError(""); try { setPreview(await gameApi.previewSpecies(input)); } catch (x) { setError(x instanceof Error ? x.message : "Preview falhou"); } };
   return <section className="page"><Title>Criar espécie</Title><form className="panel form" onSubmit={submit}><label>Nome<input required value={input.name} onChange={e => change("name", e.target.value)} /></label><div className="form-grid"><Select label="Tipo" value={input.species_type} options={["AUTOTROPH","CHEMOSYNTHETIC","HETEROTROPH","PARASITIC"]} onChange={x => change("species_type", x as SpeciesType)} /><Select label="Energia" value={input.energy_source} options={["SOLAR","CHEMICAL","ORGANIC","PARASITIC"]} onChange={x => change("energy_source", x as EnergySource)} /><Select label="Estratégia" value={input.strategy} options={["COLONIZER","COMPETITOR","RESISTANT","OPPORTUNIST","PARASITE"]} onChange={x => change("strategy", x as Strategy)} /><label>Habitat<select value={input.habitat_id} onChange={e => change("habitat_id", Number(e.target.value))}>{habitats.data?.items.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label></div><h2>Pontos restantes: <span className={points > 100 ? "danger" : "accent"}>{100 - points}</span></h2><div className="traits">{traitNames.map(name => <label key={name}>{name.replaceAll("_", " ")} <b>{input.traits[name]}</b><input type="range" min="0" max="100" value={input.traits[name]} onChange={e => { setInput({ ...input, traits: { ...input.traits, [name]: Number(e.target.value) } }); setPreview(null); }} /></label>)}</div>{error && <p className="danger">{error}</p>}<div className="actions"><button type="button" disabled={!input.name || points > 100} onClick={() => void previewNow()}>Preview Viability</button><button disabled={!preview || points > 100}>Confirmar criação</button></div>{preview && <div className="preview"><Stat label="Fitness estimado" value={n(preview.estimated_fitness, 2)} /><Stat label="Tendência" value={preview.estimated_growth} /><Stat label="Risco" value={preview.risk} /><Stat label="Compatibilidade" value={n(preview.environment_compatibility, 2)} /></div>}</form></section>;
@@ -33,7 +38,11 @@ export function CreateSpecies() {
 function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) { return <label>{label}<select value={value} onChange={e => onChange(e.target.value)}>{options.map(x => <option key={x}>{x}</option>)}</select></label>; }
 
 export function SpeciesDetail() {
-  const id = Number(useParams().id); const state = usePolling(() => gameApi.speciesById(id)); const habitats = usePolling(gameApi.habitats); const [fraction, setFraction] = useState(.25); const [destination, setDestination] = useState(1); const [error, setError] = useState("");
+  const id = Number(useParams().id); const state = usePolling(() => gameApi.speciesById(id)); const habitats = usePolling(gameApi.habitats); const [fraction, setFraction] = useState(.25); const [destination, setDestination] = useState(0); const [error, setError] = useState("");
+  useEffect(() => {
+    const candidates = (habitats.data?.items ?? []).filter(h => h.id !== state.data?.habitat_id);
+    if (candidates.length && !candidates.some(h => h.id === destination)) setDestination(candidates[0].id);
+  }, [habitats.data, state.data?.habitat_id, destination]);
   const act = async (fn: () => Promise<unknown>) => { setError(""); try { await fn(); await state.retry(); } catch (x) { setError(x instanceof Error ? x.message : "Ação falhou"); } };
   return <section className="page"><Title>Espécie</Title><AsyncState {...state}>{s => <><SpeciesCard species={s}/><div className="panel"><h2>Traits</h2><div className="stats">{traitNames.map(t => <Stat key={t} label={t.replaceAll("_", " ")} value={s.traits[t]} />)}</div></div>{s.is_player_controlled && <div className="panel form"><h2>Ações</h2><label>Fração<input type="number" min="0.01" max="1" step="0.05" value={fraction} onChange={e => setFraction(Number(e.target.value))}/></label><label>Destino<select value={destination} onChange={e => setDestination(Number(e.target.value))}>{habitats.data?.items.filter(h => h.id !== s.habitat_id).map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></label><div className="actions"><button onClick={() => void act(() => gameApi.migrate(id, destination, fraction))}>Migrar</button><button onClick={() => void act(() => gameApi.split(id, fraction))}>Dividir</button><button onClick={() => void act(() => gameApi.focusReproduction(id))}>Foco reprodução</button><button onClick={() => void act(() => gameApi.focusSurvival(id))}>Foco sobrevivência</button><button className="danger-button" onClick={() => confirm("Abandonar espécie?") && void act(() => gameApi.abandon(id))}>Abandonar</button></div><Select label="Alterar estratégia" value={s.strategy} options={["COLONIZER","COMPETITOR","RESISTANT","OPPORTUNIST","PARASITE"]} onChange={v => void act(() => gameApi.changeStrategy(id, v as Strategy))}/>{error && <p className="danger">{error}</p>}</div>}</>}</AsyncState></section>;
 }
