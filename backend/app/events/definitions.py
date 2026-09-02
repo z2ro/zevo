@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.game_balance import BALANCE
+from app.engine import CONTENT
+from app.engine.content import evaluate_condition
 from app.models.entities import Player, Species, SpeciesRelation, World
 from app.models.enums import EventRarity, RelationType, SpeciesStatus, SpeciesType
 from .conditions import All, Predicate, RandomRoll
@@ -27,15 +29,21 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
         SpeciesRelation.relation_type == RelationType.PARASITISM)))
 
     for relation in relations:
+        gray = CONTENT["events"]["gray_blood"]
         parasite, host = living.get(relation.predator_or_parasite_id), living.get(relation.target_species_id)
         if not parasite or not host or parasite.habitat_id != host.habitat_id:
             continue
 
         def harm(ctx, target=host, source=parasite):
-            loss = max(1, int(target.population * BALANCE.gray_blood_host_population_loss))
-            target.population = max(0, target.population - loss)
-            service.ensure_flag(ctx, "SPECIES_HAS_BEEN_PARASITIZED", species_id=target.id,
-                                metadata={"parasite_species_id": source.id})
+            loss = 0
+            for effect in gray.effects:
+                if effect.type == "modify_population" and effect.target == "host":
+                    before = target.population
+                    target.population = max(0, int(before * (effect.multiplier or 1.0)))
+                    loss = before - target.population
+                elif effect.type == "add_historical_flag" and effect.target == "host":
+                    service.ensure_flag(ctx, effect.flag, species_id=target.id,
+                                        metadata={"parasite_species_id": source.id})
             return {"host_population_loss": loss, "evolutionary_pressure": "HIGH"}
 
         metadata = {"parasite_species_id": parasite.id, "host_species_id": host.id,
@@ -43,15 +51,24 @@ def evaluate_tick_events(session: Session, world: World, species: list[Species],
             "habitat_id": host.habitat_id, "generation": world.generation}
         context = EventContext(world, rng, dev_mode, parasite, players.get(parasite.creator_id),
                                {"relation": relation, "host": host, "metadata": metadata})
-        definition = EventDefinition("GRAY_BLOOD", "Sangue Cinza",
-            "Uma linhagem parasitária desencadeou Sangue Cinza.", EventRarity.LEGENDARY,
-            All((Predicate("parasite", lambda c: c.species.species_type == SpeciesType.PARASITIC),
-                 Predicate("mutation", lambda c: c.species.mutation_rate >= BALANCE.gray_blood_mutation_threshold),
-                 Predicate("population", lambda c: c.resolve("host.population") >= BALANCE.gray_blood_host_population_threshold),
-                 Predicate("infection", lambda c: c.resolve("relation.infection_rate") >= BALANCE.gray_blood_infection_threshold),
-                 Predicate("transmission", lambda c: c.resolve("relation.transmission_rate") >= BALANCE.gray_blood_transmission_threshold),
-                 RandomRoll(BALANCE.gray_blood_base_probability, BALANCE.gray_blood_dev_multiplier))),
-            (CallbackConsequence("harm", harm),), metadata_factory=lambda c, data=metadata: data)
+        values = {"parasite.species_type": parasite.species_type.value,
+                  "parasite.mutation_rate": parasite.mutation_rate,
+                  "host.population": host.population,
+                  "relation.infection_rate": relation.infection_rate,
+                  "relation.transmission_rate": relation.transmission_rate}
+        condition = Predicate(
+            "declarative_gray_blood",
+            lambda c, spec=gray.trigger, vals=values: evaluate_condition(spec, vals)
+            and c.rng.random() < min(1.0, (gray.chance or 0.0) *
+                                    (BALANCE.gray_blood_dev_multiplier if c.dev_mode else 1.0)),
+        )
+        definition = EventDefinition(
+            "GRAY_BLOOD", gray.name or "Sangue Cinza",
+            gray.description or "Uma linhagem parasitária desencadeou Sangue Cinza.",
+            EventRarity.LEGENDARY, condition,
+            (CallbackConsequence("declarative_effects", harm),),
+            metadata_factory=lambda c, data=metadata: data,
+        )
         created += int(service.evaluate_and_persist(
             definition, context, idempotency_key=f"{world.tick}:{parasite.id}:{host.id}").persisted)
 

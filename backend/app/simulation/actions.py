@@ -4,6 +4,7 @@ import random
 from dataclasses import dataclass
 
 from app.config.game_balance import BALANCE, TRAIT_NAMES, BalanceConfig
+from app.engine import CONTENT
 
 
 @dataclass(frozen=True)
@@ -56,8 +57,18 @@ def apply_founder_effect(
 
 
 def focus_modifiers(action_type: str, *, balance: BalanceConfig = BALANCE) -> dict[str, float]:
-    if action_type == "FOCUS_REPRODUCTION":
-        return {"reproduction_modifier": 1.0 + balance.focus_bonus, "mortality_modifier": 1.0 + balance.focus_penalty}
-    if action_type == "FOCUS_SURVIVAL":
+    definition = CONTENT["actions"].get(action_type.lower())
+    if definition is None:
+        raise ValueError(f"Unsupported focus action: {action_type}")
+    if balance is not BALANCE:
+        if action_type == "FOCUS_REPRODUCTION":
+            return {"reproduction_modifier": 1.0 + balance.focus_bonus, "mortality_modifier": 1.0 + balance.focus_penalty}
         return {"reproduction_modifier": 1.0 - balance.focus_penalty, "mortality_modifier": 1.0 - balance.focus_bonus}
-    raise ValueError(f"Unsupported focus action: {action_type}")
+    return dict(definition.modifiers)
+
+
+def focus_duration(action_type: str) -> int:
+    definition = CONTENT["actions"].get(action_type.lower())
+    if definition is None or definition.duration_ticks is None:
+        raise ValueError(f"Unsupported focus action: {action_type}")
+    return definition.duration_ticks

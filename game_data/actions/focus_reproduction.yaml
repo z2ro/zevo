@@ -1,0 +1,5 @@
+id: focus_reproduction
+duration_ticks: 3
+modifiers:
+  reproduction_modifier: 1.20
+  mortality_modifier: 1.15

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config.game_balance import BALANCE
 from app.models.entities import Habitat, PlayerAction, Species, SpeciesTraitHistory, World
 from app.models.enums import ActionStatus, ActionType, SpeciesStatus, Strategy, TraitChangeCause
-from app.simulation.actions import apply_founder_effect, focus_modifiers, migration_population, split_population
+from app.simulation.actions import apply_founder_effect, focus_duration, focus_modifiers, migration_population, split_population
 
 
 @dataclass(frozen=True)
@@ -157,7 +157,7 @@ def queue_focus(session: Session, player_id: int, species_id: int, action_type: 
         raise ActionServiceError("focus_active", "Species already has an active focus")
     action = PlayerAction(
         player_id=player_id, species_id=species.id, action_type=action_type,
-        status=ActionStatus.PENDING, execute_at_tick=world.tick + BALANCE.focus_duration_ticks,
+        status=ActionStatus.PENDING, execute_at_tick=world.tick + focus_duration(action_type.value),
         payload={"modifiers": focus_modifiers(action_type.value), "started_at_tick": world.tick},
     )
     session.add(action); session.flush()

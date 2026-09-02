@@ -1,0 +1,5 @@
+id: focus_survival
+duration_ticks: 3
+modifiers:
+  reproduction_modifier: 0.85
+  mortality_modifier: 0.80
