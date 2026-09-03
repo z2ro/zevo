@@ -44,6 +44,12 @@ async def test_health_world_and_species_flow(monkeypatch):
     assert "thermal_tolerance" not in created_json
     current = (await client.get("/api/species/current")).json()
     assert current["traits"] == created_json["traits"]
+    responses = (await client.get(f"/api/species/{created_json['id']}/evolutions")).json()["items"]
+    metabolic = next(item for item in responses if item["id"] == "METABOLIC_EFFICIENCY_I")
+    assert metabolic["available"] is True and metabolic["can_start"] is True and metabolic["blocked_reason"] is None
+    assert (await client.post(f"/api/species/{created_json['id']}/evolutions/{metabolic['id']}")).status_code == 202
+    active_responses = (await client.get(f"/api/species/{created_json['id']}/evolutions")).json()["items"]
+    assert all(item["can_start"] is False and item["blocked_reason"] == "RESPONSE_ACTIVE" for item in active_responses)
     assert "traits" in (await client.get(f"/api/species/{created_json['id']}")).json()
     assert "traits" in (await client.get("/api/species")).json()["items"][0]
     assert "traits" in (await client.post(f"/api/species/{created_json['id']}/split", json={})).json()

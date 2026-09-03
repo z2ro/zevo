@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from app.config.settings import Settings
 from app.models.entities import Habitat, Player, Species, SpeciesEvolution, World
 from app.models.enums import EnergySource, EvolutionStatus, SpeciesStatus, SpeciesType, Strategy
-from app.services.evolution_service import active_adaptive_response, combine_modifiers, complete_due_evolutions, pressures_for_species, start_evolution
+from app.services.evolution_service import active_adaptive_response, adaptive_response_eligibility, combine_modifiers, complete_due_evolutions, pressures_for_species, start_evolution
 from app.services.simulation_service import SimulationService
 from app.simulation.population import update_population
 from app.db.base import Base
+from app.engine import CONTENT
 from backend.tests.simulation.test_service import build_world
 
 
@@ -98,3 +99,32 @@ def test_resources_produce_during_tick(session):
     before = (species.biomass, species.energy, species.genetic_material)
     SimulationService(Settings(database_url="", generations_per_tick=1, simulation_random_seed=1)).run_tick(session, world_id)
     assert (species.biomass, species.energy, species.genetic_material) > before
+
+
+def test_completed_response_can_repeat_and_eligibility_explains_blocks(session):
+    world_id, species_id, _ = build_world(session)
+    species = session.get(Species, species_id)
+    habitat = session.get(Habitat, species.habitat_id)
+    habitat.solar_energy = 0; habitat.radiation = 100
+    species.biomass = species.energy = species.genetic_material = 5_000
+    metabolic = CONTENT["evolutions"]["METABOLIC_EFFICIENCY_I"]
+    radiation = CONTENT["evolutions"]["RADIATION_SHIELDING_I"]
+    assert adaptive_response_eligibility(session, species, metabolic) == (True, True, None)
+    start_evolution(session, species.creator_id, species.id, metabolic.id, 0)
+    assert adaptive_response_eligibility(session, species, radiation) == (True, False, "RESPONSE_ACTIVE")
+    complete_due_evolutions(session, world_id, 13)
+    assert adaptive_response_eligibility(session, species, metabolic) == (True, True, None)
+    start_evolution(session, species.creator_id, species.id, metabolic.id, 14)
+    assert len(list(session.scalars(select(SpeciesEvolution).where(
+        SpeciesEvolution.species_id == species.id, SpeciesEvolution.evolution_id == metabolic.id,
+    )))) == 2
+
+
+def test_eligibility_distinguishes_pressure_and_resources(session):
+    _, species_id, _ = build_world(session)
+    species = session.get(Species, species_id)
+    habitat = session.get(Habitat, species.habitat_id)
+    metabolic = CONTENT["evolutions"]["METABOLIC_EFFICIENCY_I"]
+    assert adaptive_response_eligibility(session, species, metabolic) == (False, False, "PRESSURE_INSUFFICIENT")
+    habitat.solar_energy = 0; species.energy = 0
+    assert adaptive_response_eligibility(session, species, metabolic) == (True, False, "INSUFFICIENT_RESOURCES")
