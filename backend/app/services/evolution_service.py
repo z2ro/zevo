@@ -45,7 +45,11 @@ def active_adaptive_response(session: Session, species_id: int, tick: int) -> tu
 
 
 def combine_modifiers(*groups: dict[str, float]) -> dict[str, float]:
-    return {key: groups[0].get(key, 1.0) * groups[1].get(key, 1.0) for key in ("reproduction_modifier", "mortality_modifier")}
+    result = {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+    for group in groups:
+        for key in result:
+            result[key] *= group.get(key, 1.0)
+    return result
 
 
 def start_evolution(session: Session, player_id: int, species_id: int, evolution_id: str, tick: int) -> SpeciesEvolution:
@@ -76,7 +80,7 @@ def start_evolution(session: Session, player_id: int, species_id: int, evolution
 def complete_due_evolutions(session: Session, world_id: int, tick: int) -> list[SpeciesEvolution]:
     rows = list(session.scalars(select(SpeciesEvolution).join(Species).join(Habitat).where(
         Habitat.world_id == world_id, SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
-        SpeciesEvolution.complete_at_tick <= tick).with_for_update()))
+        SpeciesEvolution.complete_at_tick < tick).with_for_update()))
     completed = []
     for row in rows:
         species = session.get(Species, row.species_id)

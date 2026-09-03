@@ -33,7 +33,7 @@ def test_adaptive_response_deducts_resources_biases_then_completes_without_direc
     baseline = update_population(100, 1.5, 1_000, 50)
     adapted = update_population(100, 1.5, 1_000, 50, **modifiers)
     assert adapted.current < baseline.current
-    complete_due_evolutions(session, world_id, 12)
+    complete_due_evolutions(session, world_id, 13)
     row = session.scalar(select(SpeciesEvolution).where(SpeciesEvolution.species_id == species_id))
     assert row.status is EvolutionStatus.COMPLETED
     assert species.metabolic_efficiency == trait
@@ -43,10 +43,28 @@ def test_adaptive_response_deducts_resources_biases_then_completes_without_direc
 
 
 def test_focus_and_adaptive_tradeoffs_compose_multiplicatively():
-    assert combine_modifiers(
+    combined = combine_modifiers(
         {"reproduction_modifier": 1.2, "mortality_modifier": 1.15},
         {"reproduction_modifier": .9, "mortality_modifier": 1.0},
-    )["reproduction_modifier"] == pytest.approx(1.08)
+        {"reproduction_modifier": .5, "mortality_modifier": .8},
+    )
+    assert combined == {"reproduction_modifier": pytest.approx(.54), "mortality_modifier": pytest.approx(.92)}
+
+
+def test_adaptive_response_is_active_for_exact_duration(session):
+    world_id, species_id, _ = build_world(session)
+    response = SpeciesEvolution(species_id=species_id, evolution_id="METABOLIC_EFFICIENCY_I", level=1,
+                                status=EvolutionStatus.IN_PROGRESS, started_at_tick=10, complete_at_tick=13)
+    session.add(response); session.flush()
+    assert active_adaptive_response(session, species_id, 10)[0] is None
+    for tick in (11, 12, 13):
+        bias, modifiers = active_adaptive_response(session, species_id, tick)
+        assert bias is not None and modifiers["reproduction_modifier"] == .95
+    complete_due_evolutions(session, world_id, 13)
+    assert response.status is EvolutionStatus.IN_PROGRESS
+    assert active_adaptive_response(session, species_id, 14) == (None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0})
+    complete_due_evolutions(session, world_id, 14)
+    assert response.status is EvolutionStatus.COMPLETED
 
 
 def test_competition_pressure_uses_ecological_context(session):
@@ -58,7 +76,7 @@ def test_tick_completes_adaptation_only_in_processed_world(session):
     world_a, species_a, _ = build_world(session)
     first = session.get(Species, species_a)
     session.get(Habitat, first.habitat_id).solar_energy = 0
-    session.get(World, world_a).tick = 11
+    session.get(World, world_a).tick = 12
     response_a = start_evolution(session, first.creator_id, first.id, "METABOLIC_EFFICIENCY_I", 0)
     other_world = World(name="Other", generation=0, tick=0, temperature=50, oxygen=1, co2=70, radiation=30, water_availability=80, average_ph=5, solar_energy=70, chemical_energy=60, geological_activity=50)
     session.add(other_world); session.flush()
