@@ -1,7 +1,8 @@
+from datetime import timedelta
 from sqlalchemy import select
 
 from app.config.settings import Settings
-from app.models.entities import Habitat, Species, SpeciesRelation
+from app.models.entities import Habitat, Species, SpeciesRelation, World
 from app.models.enums import EnergySource, SpeciesStatus, SpeciesType, Strategy
 from app.services.simulation_service import SimulationService
 from app.simulation.fitness import calculate_fitness
@@ -13,7 +14,8 @@ def test_tick_applies_competition_from_preupdate_snapshot(session):
     species = session.get(Species, active_id)
     without_competition = calculate_fitness(species, session.get(Habitat, species.habitat_id)).value
     service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=17))
-    service.run_tick(session, world_id)
+    world = session.get(World, world_id)
+    service.run_tick(session, world_id, now=world.last_simulated_at + timedelta(seconds=5))
     assert session.get(Species, active_id).fitness < without_competition
     assert session.get(Species, active_id).fitness == session.get(Species, wild_id).fitness
 
@@ -33,7 +35,8 @@ def test_tick_establishes_relation_for_wild_parasite(session):
     host.population = 5000
     host.structural_resistance = 0
     service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=17))
-    service.run_tick(session, world_id)
+    world = session.get(World, world_id)
+    service.run_tick(session, world_id, now=world.last_simulated_at + timedelta(seconds=5))
     relation = session.scalar(select(SpeciesRelation))
     assert relation and relation.predator_or_parasite_id == parasite.id
     assert parasite.fitness > 0

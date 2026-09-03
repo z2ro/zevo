@@ -16,6 +16,7 @@ class Settings:
     simulation_interval_seconds: float = 5.0
     planet_years_per_real_second: int = 200
     species_generations_per_simulation_step: int = 1000
+    max_catchup_steps: int = 100
     simulation_random_seed: int | None = None
     dev_mode: bool = False
 
@@ -27,6 +28,7 @@ class Settings:
             simulation_interval_seconds=float(os.getenv("SIMULATION_INTERVAL_SECONDS", os.getenv("SIMULATION_TICK_SECONDS", "5"))),
             planet_years_per_real_second=int(os.getenv("PLANET_YEARS_PER_REAL_SECOND", "200")),
             species_generations_per_simulation_step=int(os.getenv("SPECIES_GENERATIONS_PER_SIMULATION_STEP", os.getenv("GENERATIONS_PER_TICK", "1000"))),
+            max_catchup_steps=int(os.getenv("MAX_CATCHUP_STEPS", "100")),
             simulation_random_seed=int(seed) if seed else None,
             dev_mode=_boolean("DEV_MODE", False),
         )

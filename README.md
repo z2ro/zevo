@@ -23,7 +23,7 @@ npm --prefix frontend run build
 docker compose config
 ```
 
-Variáveis principais estão em `.env.example`: `DEV_MODE`, intervalo da simulação, escala planetária e seed. O scheduler executa aproximadamente a cada 5 segundos; a idade de Eos-1 deriva do tempo real (por padrão, 5 segundos ≈ 1.000 anos), enquanto gerações são individuais por linhagem. Em DEV, `POST /api/dev/simulate` recebe `{"steps": N}` e `/api/dev/reset-world` restaura o mundo ao ano 0.
+Variáveis principais estão em `.env.example`: `DEV_MODE`, intervalo da simulação, escala planetária, limite de catch-up e seed. O scheduler executa aproximadamente a cada 5 segundos; cada intervalo completo processado avança Eos-1 em 1.000 anos por padrão e um atraso executa os passos discretos pendentes, limitado por chamada sem descartar o backlog. Gerações são individuais por linhagem. Em DEV, `POST /api/dev/simulate` recebe `{"steps": N}` e `/api/dev/reset-world` restaura o mundo ao ano 0.
 
 ## Banco
 

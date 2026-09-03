@@ -45,12 +45,53 @@ def test_planet_age_uses_elapsed_wall_clock_and_generations_are_individual():
         second = _species(second_player.id, habitat.id, "Second")
         session.add(second); session.commit()
         service.run_tick(session, world.id, now=start + timedelta(seconds=12))
-        assert world.age_years == 2_400
+        assert world.age_years == 2_000
         assert first.generation == 2_000 and second.generation == 1_000
         first.status = SpeciesStatus.WILD; first.is_player_controlled = False
         second.status = SpeciesStatus.EXTINCT; second.is_player_controlled = False; second.population = 0
         service.run_tick(session, world.id, now=start + timedelta(seconds=17))
         assert first.generation == 3_000 and second.generation == 1_000
+
+
+def test_partial_elapsed_time_is_preserved_and_early_calls_do_nothing():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        world = bootstrap_world(session)
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        world.last_simulated_at = start
+        player = session.scalar(select(Player).where(Player.username == "Zero"))
+        habitat = session.scalar(select(Habitat).where(Habitat.world_id == world.id))
+        species = _species(player.id, habitat.id, "Early")
+        session.add(species); session.flush()
+        resources = (species.biomass, species.energy, species.genetic_material)
+        service = SimulationService(Settings(database_url="", simulation_random_seed=1))
+        early = service.run_tick(session, world.id, now=start + timedelta(seconds=2))
+        assert early.steps_processed == 0 and world.age_years == world.tick == 0
+        assert species.generation == 0 and (species.biomass, species.energy, species.genetic_material) == resources
+        first = service.run_tick(session, world.id, now=start + timedelta(seconds=7))
+        assert first.steps_processed == 1 and world.age_years == 1_000 and world.tick == 1
+        assert world.last_simulated_at.replace(tzinfo=timezone.utc) == start + timedelta(seconds=5)
+        second = service.run_tick(session, world.id, now=start + timedelta(seconds=10))
+        assert second.steps_processed == 1 and world.age_years == 2_000 and world.tick == 2
+        assert species.generation == 2_000
+
+
+def test_catchup_limit_preserves_backlog():
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        world = bootstrap_world(session)
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        world.last_simulated_at = start
+        service = SimulationService(Settings(database_url="", max_catchup_steps=3, simulation_random_seed=1))
+        now = start + timedelta(seconds=500)
+        first = service.run_tick(session, world.id, now=now)
+        assert first.steps_processed == 3 and world.age_years == 3_000
+        assert world.last_simulated_at.replace(tzinfo=timezone.utc) == start + timedelta(seconds=15)
+        second = service.run_tick(session, world.id, now=now)
+        assert second.steps_processed == 3 and world.age_years == 6_000
+        assert world.last_simulated_at.replace(tzinfo=timezone.utc) == start + timedelta(seconds=30)
 
 
 def test_reset_world_clears_gameplay_and_restores_initial_state():

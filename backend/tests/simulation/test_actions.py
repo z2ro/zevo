@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import random
+from datetime import timedelta
 from types import SimpleNamespace
 
 from sqlalchemy import select
 
 from app.config.game_balance import BALANCE, TRAIT_NAMES
-from app.models.entities import Habitat, Player, PlayerAction, Species, SpeciesTraitHistory, World
-from app.models.enums import ActionStatus, ActionType, EnergySource, SpeciesStatus, SpeciesType, Strategy, TraitChangeCause
+from app.models.entities import Habitat, Player, PlayerAction, Species, SpeciesEvolution, SpeciesTraitHistory, World, WorldSnapshot
+from app.models.enums import ActionStatus, ActionType, EnergySource, EvolutionStatus, SpeciesStatus, SpeciesType, Strategy, TraitChangeCause
+from app.config.settings import Settings
 from app.services.action_service import (
     ActionServiceError, active_focus_modifiers, change_strategy, complete_due_focuses,
     complete_due_migrations, queue_focus, queue_migration, split_species,
 )
 from app.services.species_service import abandon_species
+from app.services.simulation_service import SimulationService
+from app.services import simulation_service as simulation_module
 from app.simulation.actions import apply_founder_effect, focus_duration, focus_modifiers
 
 
@@ -163,6 +167,49 @@ def test_focus_is_temporary_exclusive_and_has_tradeoff(session):
     assert complete_due_focuses(session, world.id, action.execute_at_year + 1) == [action]
     assert action.status is ActionStatus.COMPLETED
     assert active_focus_modifiers(session, species.id, action.execute_at_year + 1) == {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+
+
+def test_catchup_applies_migration_focus_and_adaptation_at_each_step(session, monkeypatch):
+    world, _, destination, player, species = setup_state(session)
+    migration = queue_migration(session, player.id, species.id, destination.id)
+    focus = queue_focus(session, player.id, species.id, ActionType.FOCUS_REPRODUCTION)
+    response = SpeciesEvolution(species_id=species.id, evolution_id="RADIATION_SHIELDING_I", level=1,
+        status=EvolutionStatus.IN_PROGRESS, started_at_year=0, complete_at_year=12_000)
+    session.add(response); session.flush()
+    focus_by_age, bias_by_age, habitats, event_ages = {}, {}, [], []
+    original_focus = simulation_module.active_focus_modifiers
+    original_adaptive = simulation_module.active_adaptive_response
+    original_simulate = simulation_module.simulate_species
+    original_events = simulation_module.evaluate_tick_events
+
+    def record_focus(db, species_id, age):
+        result = original_focus(db, species_id, age); focus_by_age[age] = result; return result
+
+    def record_adaptive(db, species_id, age):
+        result = original_adaptive(db, species_id, age); bias_by_age[age] = result[0]; return result
+
+    def record_habitat(candidate, habitat, *args, **kwargs):
+        habitats.append(habitat.id); return original_simulate(candidate, habitat, *args, **kwargs)
+
+    def record_events(db, event_world, *args, **kwargs):
+        event_ages.append(event_world.age_years)
+        return original_events(db, event_world, *args, **kwargs)
+
+    monkeypatch.setattr(simulation_module, "active_focus_modifiers", record_focus)
+    monkeypatch.setattr(simulation_module, "active_adaptive_response", record_adaptive)
+    monkeypatch.setattr(simulation_module, "simulate_species", record_habitat)
+    monkeypatch.setattr(simulation_module, "evaluate_tick_events", record_events)
+    summary = SimulationService(Settings(database_url="", simulation_random_seed=7)).run_tick(
+        session, world.id, now=world.last_simulated_at + timedelta(seconds=75))
+    assert summary.steps_processed == 15
+    assert migration.status is ActionStatus.COMPLETED and habitats == [destination.id] * 15
+    assert all(focus_by_age[age]["reproduction_modifier"] > 1 for age in (1_000, 2_000, 3_000))
+    assert all(focus_by_age[age]["reproduction_modifier"] == 1 for age in range(4_000, 16_000, 1_000))
+    assert all(bias_by_age[age] is not None for age in range(1_000, 13_000, 1_000))
+    assert all(bias_by_age[age] is None for age in range(13_000, 16_000, 1_000))
+    assert focus.status is ActionStatus.COMPLETED and response.status is EvolutionStatus.COMPLETED
+    assert event_ages == list(range(1_000, 16_000, 1_000))
+    assert [row.age_years for row in session.scalars(select(WorldSnapshot).order_by(WorldSnapshot.tick))] == list(range(1_000, 16_000, 1_000))
 
 
 def test_only_current_active_species_accepts_actions(session):

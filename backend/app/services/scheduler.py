@@ -24,7 +24,7 @@ def start_scheduler() -> tuple[Event, Thread]:
                         SimulationService(settings).run_tick(session, world_id)
                     session.commit()
                 except Exception:
-                    session.rollback(); logger.exception("simulation_tick_failed")
+                    session.rollback(); logger.exception("simulation_advance_failed")
 
     thread = Thread(target=loop, name="zevo-simulation", daemon=True)
     thread.start()

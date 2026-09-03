@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -295,13 +294,8 @@ async def current_player(db: Db): return serialize_player(zero(db), db)
 @app.post("/api/dev/simulate")
 async def simulate(body: SimulateBody, db: Db):
     if not get_settings().dev_mode: raise HTTPException(404, "DEV mode disabled")
-    value = world(db); settings = get_settings(); service = SimulationService(settings)
-    simulated_at = value.last_simulated_at
-    if simulated_at.tzinfo is None: simulated_at = simulated_at.replace(tzinfo=timezone.utc)
-    simulated_at = max(simulated_at, datetime.now(timezone.utc))
-    for _ in range(body.steps):
-        simulated_at += timedelta(seconds=settings.simulation_interval_seconds)
-        service.run_tick(db, value.id, now=simulated_at)
+    value = world(db); service = SimulationService()
+    service.run_steps(db, value.id, body.steps)
     db.commit(); db.refresh(value)
     return {"simulation_step": value.tick, "age_years": value.age_years}
 

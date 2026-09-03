@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class TickSummary:
+class SimulationSummary:
     world_id: int
+    steps_processed: int
     simulation_step: int
     planet_age_years: int
     species_processed: int
@@ -45,7 +46,8 @@ class SimulationService:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
 
-    def run_tick(self, session: Session, world_id: int, *, now: datetime | None = None) -> TickSummary:
+    def run_tick(self, session: Session, world_id: int, *, now: datetime | None = None) -> SimulationSummary:
+        """Process the bounded number of complete real-time intervals now due."""
         world = session.execute(select(World).where(World.id == world_id).with_for_update()).scalar_one()
         now = now or datetime.now(timezone.utc)
         if now.tzinfo is None:
@@ -54,10 +56,32 @@ class SimulationService:
         if previous.tzinfo is None:
             previous = previous.replace(tzinfo=timezone.utc)
         elapsed_seconds = max(0.0, (now - previous).total_seconds())
-        elapsed_years = int(elapsed_seconds * self.settings.planet_years_per_real_second)
-        if elapsed_years:
-            world.age_years += elapsed_years
-            world.last_simulated_at = previous + timedelta(seconds=elapsed_years / self.settings.planet_years_per_real_second)
+        steps_due = int(elapsed_seconds / self.settings.simulation_interval_seconds)
+        return self._run_steps(world, min(steps_due, self.settings.max_catchup_steps))
+
+    def run_steps(self, session: Session, world_id: int, steps: int) -> SimulationSummary:
+        """Run an exact number of steps for the DEV simulation endpoint."""
+        world = session.execute(select(World).where(World.id == world_id).with_for_update()).scalar_one()
+        return self._run_steps(world, steps)
+
+    def _run_steps(self, world: World, steps: int) -> SimulationSummary:
+        processed = species_processed = mutations = extinctions = 0
+        years_per_step = round(self.settings.simulation_interval_seconds * self.settings.planet_years_per_real_second)
+        for _ in range(steps):
+            world.age_years += years_per_step
+            world.last_simulated_at += timedelta(seconds=self.settings.simulation_interval_seconds)
+            step_species, step_mutations, step_extinctions = self._process_simulation_step(world)
+            species_processed += step_species
+            mutations += step_mutations
+            extinctions += step_extinctions
+            processed += 1
+        return SimulationSummary(world.id, processed, world.tick, world.age_years,
+                                 species_processed, mutations, extinctions)
+
+    def _process_simulation_step(self, world: World) -> tuple[int, int, int]:
+        session = Session.object_session(world)
+        if session is None:
+            raise RuntimeError("world must be attached to a session")
         next_tick = world.tick + 1
         seed = self.settings.simulation_random_seed
         rng = random.Random(f"{seed if seed is not None else 'zevo'}:{world.id}:{next_tick}")
@@ -138,7 +162,7 @@ class SimulationService:
             "simulation_step world_id=%s step=%s planet_age_years=%s species=%s mutations=%s extinctions=%s",
             world.id, next_tick, world.age_years, len(species_list), mutations, extinctions,
         )
-        return TickSummary(world.id, next_tick, world.age_years, len(species_list), mutations, extinctions)
+        return len(species_list), mutations, extinctions
 
     @staticmethod
     def _reconcile_extinctions(species_list: list[Species]) -> int:

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config.settings import Settings
-from app.models.entities import Habitat, Player, Species, SpeciesPopulationSnapshot, SpeciesTraitHistory, World, WorldSnapshot
+from app.models.entities import GameEvent, Habitat, Player, Species, SpeciesPopulationSnapshot, SpeciesTraitHistory, World, WorldSnapshot
 from app.models.enums import EnergySource, SpeciesStatus, SpeciesType, Strategy
 from app.services.simulation_service import SimulationService
 
@@ -61,6 +61,34 @@ def test_same_seed_and_state_produce_same_tick(session):
     second = [(s.id, s.population, s.fitness, s.thermal_tolerance, s.mutation_rate)
               for s in session.scalars(select(Species).order_by(Species.id))]
     assert first == second
+
+
+def test_six_regular_steps_equal_one_thirty_second_catchup(session):
+    world_id, *_ = build_world(session)
+    settings = Settings(database_url="", species_generations_per_simulation_step=1_000,
+                        simulation_random_seed=99, dev_mode=True)
+    service = SimulationService(settings)
+    start = session.get(World, world_id).last_simulated_at
+    for step in range(1, 7):
+        service.run_tick(session, world_id, now=start + timedelta(seconds=5 * step))
+    regular = (
+        session.get(World, world_id).tick, session.get(World, world_id).age_years,
+        [(s.id, s.generation, s.population, s.biomass, s.energy, s.genetic_material,
+          s.fitness, s.thermal_tolerance, s.radiation_tolerance, s.mutation_rate)
+         for s in session.scalars(select(Species).order_by(Species.id))],
+        session.scalar(select(func.count()).select_from(GameEvent)),
+    )
+    session.rollback()
+    summary = service.run_tick(session, world_id, now=start + timedelta(seconds=30))
+    caught_up = (
+        session.get(World, world_id).tick, session.get(World, world_id).age_years,
+        [(s.id, s.generation, s.population, s.biomass, s.energy, s.genetic_material,
+          s.fitness, s.thermal_tolerance, s.radiation_tolerance, s.mutation_rate)
+         for s in session.scalars(select(Species).order_by(Species.id))],
+        session.scalar(select(func.count()).select_from(GameEvent)),
+    )
+    assert summary.steps_processed == 6
+    assert caught_up == regular
 
 
 def test_dev_tick_records_selected_mutation_history(session):

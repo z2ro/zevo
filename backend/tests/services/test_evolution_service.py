@@ -100,7 +100,9 @@ def test_resources_produce_during_tick(session):
     world_id, species_id, _ = build_world(session)
     species = session.get(Species, species_id)
     before = (species.biomass, species.energy, species.genetic_material)
-    SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=1)).run_tick(session, world_id)
+    world = session.get(World, world_id)
+    SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=1)).run_tick(
+        session, world_id, now=world.last_simulated_at + timedelta(seconds=5))
     assert (species.biomass, species.energy, species.genetic_material) > before
 
 
