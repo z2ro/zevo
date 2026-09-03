@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.engine.content import ConditionSpec, ContentDefinition, evaluate_condition, load_content
+from app.engine.content import ConditionSpec, ContentDefinition, _load_directory, evaluate_condition, load_content
 from app.models.enums import Strategy
 
 
@@ -45,3 +45,20 @@ def test_invalid_in_operand_and_full_unknown_field():
         ConditionSpec(field="species.foo", op="eq", value=1)
     with pytest.raises(ValueError):
         ConditionSpec(field="species.population", op="in", value=123)
+
+
+@pytest.mark.parametrize("extra", [
+    "selection_bias: {trait: unknown, strength: 0.25}",
+    "selection_bias: {trait: radiation_tolerance, strength: 2}",
+    "tradeoffs: {unknown_modifier: 0.9}",
+    "tradeoffs: {reproduction_modifier: 0}",
+])
+def test_adaptive_response_validation(tmp_path: Path, extra: str):
+    root = tmp_path / "evolutions"; root.mkdir()
+    (root / "response.yaml").write_text(
+        "id: RESPONSE\nname: Response\ncategory: DEFENSE\ncost: {energy: 1}\nduration_ticks: 2\n"
+        "pressure: {type: RADIATION, minimum_severity: MEDIUM}\n"
+        "selection_bias: {trait: radiation_tolerance, strength: 0.25}\n" + extra + "\n"
+    )
+    with pytest.raises(ValueError, match="adaptive response|tradeoff"):
+        _load_directory(root, "*.yaml")

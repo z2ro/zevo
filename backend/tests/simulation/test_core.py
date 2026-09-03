@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from app.models.enums import EnergySource, SpeciesStatus, SpeciesType, Strategy
 from app.config.game_balance import BALANCE
 from app.simulation.engine import simulate_species
-from app.simulation.evolution import attempt_mutation
+from app.simulation.evolution import MutationBias, attempt_mutation
 from app.simulation.fitness import FitnessContext, calculate_fitness, preview_fitness
 from app.simulation.population import update_population
 
@@ -84,6 +84,29 @@ def test_forced_mutation_changes_a_trait_and_is_reproducible():
     assert a is not None
     assert a == b
     assert getattr(left, a.trait) == a.new_value != a.old_value
+
+
+def test_mutation_bias_favors_target_without_changing_unbiased_path():
+    baseline, repeated, biased = species(), species(), species()
+    normal = attempt_mutation(baseline, habitat(), random.Random(42), force=True)
+    same = attempt_mutation(repeated, habitat(), random.Random(42), force=True)
+    favored = attempt_mutation(biased, habitat(), random.Random(42), force=True, bias=MutationBias("radiation_tolerance", 1.0))
+    assert normal == same
+    assert favored.trait == "radiation_tolerance"
+
+
+def test_mutation_bias_can_fix_beneficial_target_without_guaranteeing_mutations():
+    target_habitat = habitat(temperature=0, radiation=100, ph=0)
+    values = dict(thermal_tolerance=0, radiation_tolerance=0, ph_tolerance=0,
+                  metabolic_efficiency=0, reproduction_rate=0, mutation_rate=0,
+                  energy_efficiency=0, structural_resistance=0)
+    balance = replace(BALANCE, mutation_chance=1, beneficial_fixation_chance=0,
+                      neutral_fixation_chance=0, harmful_fixation_chance=0,
+                      selection_beneficial_threshold=.0001, selection_harmful_threshold=-.0001)
+    assert attempt_mutation(species(**values), target_habitat, random.Random(0), balance=balance) is None
+    change = attempt_mutation(species(**values), target_habitat, random.Random(0), balance=balance,
+                              bias=MutationBias("radiation_tolerance", 1.0))
+    assert change and change.trait == "radiation_tolerance" and change.fitness_after > change.fitness_before
 
 
 def test_bottleneck_can_produce_larger_mutation():

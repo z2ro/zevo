@@ -35,4 +35,4 @@ docker compose down -v  # reset local destrutivo
 
 Contratos concisos permanecem em `docs/`.
 
-O loop de progresso inclui recursos por espécie e evoluções declarativas em `game_data/evolutions/`; uma evolução ativa é concluída pelo simulation tick.
+O loop de progresso usa recursos fisiológicos e respostas adaptativas declarativas em `game_data/evolutions/`; durante o processo, pressões ambientais enviesam mutação/seleção sem garantir upgrades.

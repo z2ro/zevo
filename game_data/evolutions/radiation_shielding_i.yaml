@@ -1,10 +1,9 @@
 id: RADIATION_SHIELDING_I
-name: Blindagem radiativa I
+name: Favorecer tolerância à radiação
 category: DEFENSE
 level: 1
 cost: {biomass: 400, energy: 400, genetic_material: 25}
 duration_ticks: 12
-effects: [{type: modify_trait, target: species, trait: radiation_tolerance, amount: 2}]
 requirements: []
 pressure: {type: RADIATION, minimum_severity: MEDIUM}
 selection_bias: {trait: radiation_tolerance, strength: 0.25}

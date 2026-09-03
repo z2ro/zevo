@@ -5,16 +5,47 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.engine import CONTENT
-from app.engine.effects import EffectExecutionContext, execute_effects
 from app.models.entities import Habitat, Species, SpeciesEvolution
 from app.models.enums import EvolutionStatus, SpeciesStatus
 from app.simulation.pressures import resolve_pressures
-from app.simulation.fitness import FitnessContext
+from app.simulation.evolution import MutationBias
+from app.simulation.interactions import fitness_context_for
 
 
 class EvolutionServiceError(Exception):
     def __init__(self, code: str, message: str, status_code: int = 409):
         self.code, self.message, self.status_code = code, message, status_code
+
+
+def pressures_for_species(session: Session, species: Species):
+    habitat = session.get(Habitat, species.habitat_id)
+    living = list(session.scalars(select(Species).where(
+        Species.habitat_id == species.habitat_id, Species.status != SpeciesStatus.EXTINCT,
+    )))
+    context = fitness_context_for(species, living, habitat.carrying_capacity) if habitat else None
+    return resolve_pressures(species, habitat, context) if habitat and context else []
+
+
+def active_adaptive_response(session: Session, species_id: int, tick: int) -> tuple[MutationBias | None, dict[str, float]]:
+    row = session.scalar(select(SpeciesEvolution).where(
+        SpeciesEvolution.species_id == species_id,
+        SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
+        SpeciesEvolution.started_at_tick < tick,
+        SpeciesEvolution.complete_at_tick >= tick,
+    ).order_by(SpeciesEvolution.id.desc()))
+    if not row:
+        return None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+    spec = CONTENT["evolutions"].get(row.evolution_id)
+    if not spec:
+        return None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+    bias = MutationBias(str(spec.selection_bias["trait"]), float(spec.selection_bias["strength"]))
+    modifiers = {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+    modifiers.update(spec.tradeoffs)
+    return bias, modifiers
+
+
+def combine_modifiers(*groups: dict[str, float]) -> dict[str, float]:
+    return {key: groups[0].get(key, 1.0) * groups[1].get(key, 1.0) for key in ("reproduction_modifier", "mortality_modifier")}
 
 
 def start_evolution(session: Session, player_id: int, species_id: int, evolution_id: str, tick: int) -> SpeciesEvolution:
@@ -26,8 +57,7 @@ def start_evolution(session: Session, player_id: int, species_id: int, evolution
     if spec.pressure:
         pressure_type = spec.pressure.get("type")
         minimum = {"LOW": 0.0, "MEDIUM": .25, "HIGH": .5, "CRITICAL": .75}.get(spec.pressure.get("minimum_severity", "LOW"), 0.0)
-        habitat = session.get(Habitat, species.habitat_id)
-        if not habitat or not any(p.type == pressure_type and p.score >= minimum for p in resolve_pressures(species, habitat)):
+        if not any(p.type == pressure_type and p.score >= minimum for p in pressures_for_species(session, species)):
             raise EvolutionServiceError("response_unavailable", "This adaptive response is not supported by current pressures")
     active = session.scalar(select(SpeciesEvolution.id).where(SpeciesEvolution.species_id == species_id, SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS))
     if active: raise EvolutionServiceError("evolution_active", "An evolution is already in progress")
@@ -44,12 +74,12 @@ def start_evolution(session: Session, player_id: int, species_id: int, evolution
 
 
 def complete_due_evolutions(session: Session, world_id: int, tick: int) -> list[SpeciesEvolution]:
-    rows = list(session.scalars(select(SpeciesEvolution).join(Species).where(SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
-        SpeciesEvolution.complete_at_tick <= tick, Species.habitat_id.is_not(None)).with_for_update()))
+    rows = list(session.scalars(select(SpeciesEvolution).join(Species).join(Habitat).where(
+        Habitat.world_id == world_id, SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
+        SpeciesEvolution.complete_at_tick <= tick).with_for_update()))
     completed = []
     for row in rows:
-        species = session.get(Species, row.species_id); spec = CONTENT["evolutions"].get(row.evolution_id)
-        if not species or not spec: continue
-        execute_effects(spec.effects, EffectExecutionContext(world=None, species=species))
+        species = session.get(Species, row.species_id)
+        if not species: continue
         row.status = EvolutionStatus.COMPLETED; row.completed_at = datetime.now(timezone.utc); completed.append(row)
     session.flush(); return completed

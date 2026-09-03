@@ -1,10 +1,9 @@
 id: METABOLIC_EFFICIENCY_I
-name: Eficiência metabólica I
+name: Favorecer eficiência metabólica
 category: METABOLISM
 level: 1
 cost: {biomass: 500, energy: 300, genetic_material: 20}
 duration_ticks: 12
-effects: [{type: modify_trait, target: species, trait: metabolic_efficiency, amount: 2}]
 requirements: []
 pressure: {type: ENERGY_SCARCITY, minimum_severity: MEDIUM}
 selection_bias: {trait: metabolic_efficiency, strength: 0.25}

@@ -25,7 +25,7 @@ export interface Species {
   resource_rates?: { biomass: number; energy: number; genetic_material: number };
 }
 
-export interface Evolution { id: string; name: string; category: string; level: number; cost: Record<string, number>; duration_ticks: number; requirements: unknown[]; status: string | null; available?: boolean; pressure?: Record<string, string>; selection_bias?: Record<string, string | number>; tradeoffs?: Record<string, number>; }
+export interface Evolution { id: string; name: string; category: string; level: number; cost: Record<string, number>; duration_ticks: number; requirements: unknown[]; status: string | null; ticks_remaining?: number | null; available?: boolean; pressure?: Record<string, string>; selection_bias?: Record<string, string | number>; tradeoffs?: Record<string, number>; }
 export interface SelectivePressure { type: string; score: number; severity: string; description: string; }
 
 export interface World {

@@ -19,6 +19,12 @@ class TraitChange:
     fitness_after: float
 
 
+@dataclass(frozen=True)
+class MutationBias:
+    trait: str
+    strength: float
+
+
 def attempt_mutation(
     species: object,
     habitat: object,
@@ -28,6 +34,7 @@ def attempt_mutation(
     balance: BalanceConfig = BALANCE,
     dev_mode: bool = False,
     force: bool = False,
+    bias: MutationBias | None = None,
 ) -> TraitChange | None:
     chance = balance.mutation_chance * (1.0 + getattr(species, "mutation_rate") / 100.0)
     if dev_mode:
@@ -35,7 +42,7 @@ def attempt_mutation(
     if not force and rng.random() >= min(1.0, chance):
         return None
 
-    trait = rng.choice(TRAIT_NAMES)
+    trait = bias.trait if bias and rng.random() < bias.strength else rng.choice(TRAIT_NAMES)
     old = int(getattr(species, trait))
     magnitude_range = balance.bottleneck_mutation_magnitude if getattr(species, "population") < balance.bottleneck_population else balance.mutation_magnitude
     direction = rng.choice((-1, 1))
@@ -56,6 +63,8 @@ def attempt_mutation(
         else balance.neutral_fixation_chance if delta >= balance.selection_harmful_threshold
         else balance.harmful_fixation_chance
     )
+    if bias and trait == bias.trait and delta > balance.selection_beneficial_threshold:
+        fixation = min(1.0, fixation + bias.strength)
     if not force and rng.random() >= fixation:
         setattr(species, trait, old)
         return None

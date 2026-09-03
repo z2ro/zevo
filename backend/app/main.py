@@ -23,8 +23,7 @@ from app.services.action_service import ActionServiceError, change_strategy, que
 from app.services.scheduler import start_scheduler
 from app.services.simulation_service import SimulationService
 from app.services.species_service import SpeciesServiceError, abandon_species, create_species, preview_species
-from app.services.evolution_service import EvolutionServiceError, start_evolution
-from app.simulation.pressures import resolve_pressures
+from app.services.evolution_service import EvolutionServiceError, pressures_for_species, start_evolution
 
 
 @asynccontextmanager
@@ -197,13 +196,15 @@ async def species_detail(species_id: int, db: Db):
 @app.get("/api/species/{species_id}/evolutions")
 async def species_evolutions(species_id: int, db: Db):
     if not db.get(Species, species_id): raise HTTPException(404, "Species not found")
-    species = db.get(Species, species_id); habitat = db.get(Habitat, species.habitat_id)
-    pressures = resolve_pressures(species, habitat) if habitat else []
+    species = db.get(Species, species_id)
+    pressures = pressures_for_species(db, species)
+    current_tick = db.scalar(select(World.tick).join(Habitat, Habitat.world_id == World.id).where(Habitat.id == species.habitat_id)) or 0
     items = []
     for key, spec in sorted(CONTENT["evolutions"].items()):
         minimum = {"LOW": 0.0, "MEDIUM": .25, "HIGH": .5, "CRITICAL": .75}.get(spec.pressure.get("minimum_severity", "LOW"), 0.0)
         available = not spec.pressure or any(p.type == spec.pressure.get("type") and p.score >= minimum for p in pressures)
-        items.append({"id": key, "name": spec.name, "category": spec.category, "level": spec.level, "cost": spec.cost, "duration_ticks": spec.duration_ticks, "requirements": spec.requirements, "pressure": spec.pressure, "selection_bias": spec.selection_bias, "tradeoffs": spec.tradeoffs, "available": available, "status": (db.scalar(select(SpeciesEvolution.status).where(SpeciesEvolution.species_id == species_id, SpeciesEvolution.evolution_id == key).order_by(SpeciesEvolution.id.desc())) or None)})
+        process = db.scalar(select(SpeciesEvolution).where(SpeciesEvolution.species_id == species_id, SpeciesEvolution.evolution_id == key).order_by(SpeciesEvolution.id.desc()))
+        items.append({"id": key, "name": spec.name, "category": spec.category, "level": spec.level, "cost": spec.cost, "duration_ticks": spec.duration_ticks, "requirements": spec.requirements, "pressure": spec.pressure, "selection_bias": spec.selection_bias, "tradeoffs": spec.tradeoffs, "available": available, "status": process.status if process else None, "ticks_remaining": max(0, process.complete_at_tick - current_tick) if process and process.status.value == "IN_PROGRESS" else None})
     return {"items": items}
 
 
@@ -211,9 +212,7 @@ async def species_evolutions(species_id: int, db: Db):
 async def species_pressures(species_id: int, db: Db):
     species = db.get(Species, species_id)
     if not species: raise HTTPException(404, "Species not found")
-    habitat = db.get(Habitat, species.habitat_id)
-    if not habitat: return {"items": []}
-    return {"items": [p.__dict__ for p in resolve_pressures(species, habitat)]}
+    return {"items": [p.__dict__ for p in pressures_for_species(db, species)]}
 
 
 @app.post("/api/species/{species_id}/evolutions/{evolution_id}", status_code=202)

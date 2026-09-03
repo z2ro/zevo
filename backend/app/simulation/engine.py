@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from app.config.game_balance import BALANCE, BalanceConfig
 from app.models.enums import SpeciesStatus
 
-from .evolution import TraitChange, attempt_mutation
+from .evolution import MutationBias, TraitChange, attempt_mutation
 from .fitness import FitnessContext, calculate_fitness
 from .population import PopulationResult, update_population
 
@@ -30,6 +30,7 @@ def simulate_species(
     dev_mode: bool = False,
     reproduction_modifier: float = 1.0,
     mortality_modifier: float = 1.0,
+    mutation_bias: MutationBias | None = None,
 ) -> SpeciesTickResult:
     fitness = calculate_fitness(species, habitat, context, balance=balance).value
     population = update_population(
@@ -39,7 +40,7 @@ def simulate_species(
     )
     species.fitness = fitness
     species.population = population.current
-    mutation = attempt_mutation(species, habitat, rng, context, balance=balance, dev_mode=dev_mode)
+    mutation = attempt_mutation(species, habitat, rng, context, balance=balance, dev_mode=dev_mode, bias=mutation_bias)
     if mutation:
         fitness = mutation.fitness_after
         species.fitness = fitness

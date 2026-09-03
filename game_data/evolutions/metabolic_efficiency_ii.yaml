@@ -1,8 +1,0 @@
-id: METABOLIC_EFFICIENCY_II
-name: Eficiência metabólica II
-category: METABOLISM
-level: 2
-cost: {biomass: 900, energy: 600, genetic_material: 40}
-duration_ticks: 18
-effects: [{type: modify_trait, target: species, trait: metabolic_efficiency, amount: 2}]
-requirements: [{evolution: METABOLIC_EFFICIENCY_I, level: 1}]

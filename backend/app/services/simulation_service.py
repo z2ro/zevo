@@ -20,7 +20,7 @@ from app.simulation.common import enum_value
 from app.events.definitions import evaluate_tick_events
 from app.simulation.bots import run_bots
 from app.services.action_service import active_focus_modifiers, complete_due_focuses, complete_due_migrations
-from app.services.evolution_service import complete_due_evolutions
+from app.services.evolution_service import active_adaptive_response, combine_modifiers, complete_due_evolutions
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,6 @@ class SimulationService:
         world.tick = next_tick
         complete_due_migrations(session, world.id, next_tick)
         complete_due_focuses(session, world.id, next_tick)
-        complete_due_evolutions(session, world.id, next_tick)
         run_bots(session, world, rng)
         habitats = {h.id: h for h in session.scalars(select(Habitat).where(Habitat.world_id == world.id))}
         species_list = list(session.scalars(
@@ -90,9 +89,13 @@ class SimulationService:
             species.genetic_material += max(1, round(species.population * max(0.0, species.fitness) * BALANCE.resource_genetic_rate))
             habitat = habitats[species.habitat_id]
             focus = active_focus_modifiers(session, species.id, next_tick)
+            bias, adaptive = active_adaptive_response(session, species.id, next_tick)
+            modifiers = combine_modifiers(focus, adaptive)
             result = simulate_species(
                 species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode,
-                reproduction_modifier=focus["reproduction_modifier"], mortality_modifier=focus["mortality_modifier"],
+                reproduction_modifier=modifiers["reproduction_modifier"],
+                mortality_modifier=modifiers["mortality_modifier"],
+                mutation_bias=bias,
             )
             species.generation += self.settings.generations_per_tick
             if result.mutation:
@@ -107,6 +110,7 @@ class SimulationService:
                 extinctions += 1
                 species.extinct_at = datetime.now(timezone.utc)
                 logger.info("species_extinct world_id=%s species_id=%s generation=%s", world.id, species.id, generation)
+        complete_due_evolutions(session, world.id, next_tick)
         self._apply_species_environment(world, species_list)
         world.generation = generation
         evaluate_tick_events(session, world, species_list, rng, self.settings.dev_mode, mutation_results)

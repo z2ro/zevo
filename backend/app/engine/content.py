@@ -20,6 +20,7 @@ CONDITION_FIELDS = {
     "mutation.fitness_delta",
 }
 EVENT_SCOPES = {"SPECIES", "PARASITISM_RELATION", "MUTATION"}
+PRESSURE_TYPES = {"TEMPERATURE", "RADIATION", "PH", "ENERGY_SCARCITY", "COMPETITION", "POPULATION_DECLINE"}
 condition_registry = frozenset(OPERATORS) | {"all", "any", "not"}
 def safe_in(actual, expected): return actual in expected
 CONDITION_OPERATORS = {"eq": operator.eq, "neq": operator.ne, "gt": operator.gt,
@@ -129,6 +130,16 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"strategy content {path} requires name and fitness_bonus")
         if root.name == "evolutions" and (not definition.name or definition.duration_ticks is None or not definition.cost):
             raise ValueError(f"evolution content {path} requires name, cost and duration_ticks")
+        if root.name == "evolutions":
+            trait, strength = definition.selection_bias.get("trait"), definition.selection_bias.get("strength")
+            if (definition.pressure.get("type") not in PRESSURE_TYPES
+                    or definition.pressure.get("minimum_severity") not in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+                    or trait not in TRAIT_NAMES or not isinstance(strength, (int, float)) or not 0 <= strength <= 1):
+                raise ValueError(f"adaptive response {path} requires pressure and valid selection_bias")
+            if definition.effects:
+                raise ValueError(f"adaptive response {path} must not grant direct effects")
+            if any(key not in {"reproduction_modifier", "mortality_modifier"} or value <= 0 for key, value in definition.tradeoffs.items()):
+                raise ValueError(f"invalid adaptive response tradeoff in {path}")
         if any(value < 0 for value in definition.cost.values()):
             raise ValueError(f"negative evolution cost in {path}")
         if definition.rarity and definition.rarity not in {item.value for item in EventRarity}:

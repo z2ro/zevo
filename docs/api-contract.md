@@ -23,7 +23,7 @@ Representações canônicas: `Species` agrupa os oito traits em `traits`; `GameE
 - `POST /api/species/{id}/focus-reproduction` e `/focus-survival`: `{}` → 202 PlayerAction.
 - `POST /api/species/{id}/abandon`: `{}` → 200 Species WILD.
 - Species responses include `resources` (`biomass`, `energy`, `genetic_material`, `adaptation_points`) and per-tick `resource_rates`.
-- `GET /api/species/{id}/evolutions` lists declarative research; `POST /api/species/{id}/evolutions/{evolution_id}` deducts its cost and starts one timed evolution (202).
+- `GET /api/species/{id}/evolutions` lists adaptive responses; `POST /api/species/{id}/evolutions/{evolution_id}` deducts its physiological cost and starts one timed response (202). While active it biases mutation/selection and applies declared population trade-offs; completion grants no trait directly.
 - `GET /api/species/{id}/pressures` returns current ecological pressures (`type`, `score`, `severity`, `description`); responses with a declared pressure are available only when that pressure reaches its minimum severity.
 
 Somente espécie corrente aceita comandos; caso contrário 409. A fração permanece apenas na Expedição Fundadora.
