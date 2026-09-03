@@ -55,10 +55,10 @@ def test_migration_is_pending_then_completes_with_mortality(session):
     world, source, destination, player, species = setup_state(session)
     action = queue_migration(session, player.id, species.id, destination.id)
     assert action.status is ActionStatus.PENDING
-    assert action.execute_at_tick == world.tick + BALANCE.migration_duration_ticks
+    assert action.execute_at_year == world.age_years + BALANCE.migration_duration_years
     assert species.habitat_id == source.id
-    assert complete_due_migrations(session, world.id, world.tick) == []
-    completed = complete_due_migrations(session, world.id, world.tick + 1)
+    assert complete_due_migrations(session, world.id, world.age_years) == []
+    completed = complete_due_migrations(session, world.id, world.age_years + 1_000)
     assert completed == [action]
     assert action.status is ActionStatus.COMPLETED
     assert species.habitat_id == destination.id
@@ -80,8 +80,8 @@ def test_abandon_fails_pending_control_actions(session):
     assert species.status is SpeciesStatus.WILD
     assert migration.status is ActionStatus.FAILED and focus.status is ActionStatus.FAILED
     assert migration.payload["failure_reason"] == "species_abandoned"
-    assert complete_due_migrations(session, world.id, world.tick + 1) == []
-    assert active_focus_modifiers(session, species.id, world.tick + 1) == {
+    assert complete_due_migrations(session, world.id, world.age_years + 1_000) == []
+    assert active_focus_modifiers(session, species.id, world.age_years + 1_000) == {
         "reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
 
@@ -137,12 +137,12 @@ def test_focus_modifiers_use_injected_balance():
     }
 
 
-def test_strategy_changes_immediately_and_enforces_tick_cooldown(session):
+def test_strategy_changes_immediately_and_enforces_year_cooldown(session):
     world, _, _, player, species = setup_state(session)
     change_strategy(session, player.id, species.id, Strategy.RESISTANT)
     assert species.strategy is Strategy.RESISTANT
     raises_code("strategy_cooldown", lambda: change_strategy(session, player.id, species.id, Strategy.COMPETITOR))
-    world.tick += BALANCE.strategy_cooldown_ticks
+    world.age_years += BALANCE.strategy_cooldown_years
     change_strategy(session, player.id, species.id, Strategy.COMPETITOR)
     assert species.strategy is Strategy.COMPETITOR
 
@@ -151,18 +151,18 @@ def test_focus_is_temporary_exclusive_and_has_tradeoff(session):
     world, _, _, player, species = setup_state(session)
     action = queue_focus(session, player.id, species.id, ActionType.FOCUS_REPRODUCTION)
     assert action.status is ActionStatus.PENDING
-    assert action.execute_at_tick == world.tick + focus_duration(ActionType.FOCUS_REPRODUCTION.value)
+    assert action.execute_at_year == world.age_years + focus_duration(ActionType.FOCUS_REPRODUCTION.value)
     assert action.payload["modifiers"] == focus_modifiers("FOCUS_REPRODUCTION")
     assert action.payload["modifiers"]["reproduction_modifier"] > 1
     assert action.payload["modifiers"]["mortality_modifier"] > 1
-    assert active_focus_modifiers(session, species.id, world.tick) == action.payload["modifiers"]
+    assert active_focus_modifiers(session, species.id, world.age_years) == action.payload["modifiers"]
     raises_code("focus_active", lambda: queue_focus(session, player.id, species.id, ActionType.FOCUS_SURVIVAL))
-    assert complete_due_focuses(session, world.id, action.execute_at_tick) == []
+    assert complete_due_focuses(session, world.id, action.execute_at_year) == []
     assert action.status is ActionStatus.PENDING
-    assert active_focus_modifiers(session, species.id, action.execute_at_tick) == action.payload["modifiers"]
-    assert complete_due_focuses(session, world.id, action.execute_at_tick + 1) == [action]
+    assert active_focus_modifiers(session, species.id, action.execute_at_year) == action.payload["modifiers"]
+    assert complete_due_focuses(session, world.id, action.execute_at_year + 1) == [action]
     assert action.status is ActionStatus.COMPLETED
-    assert active_focus_modifiers(session, species.id, action.execute_at_tick + 1) == {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
+    assert active_focus_modifiers(session, species.id, action.execute_at_year + 1) == {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
 
 def test_only_current_active_species_accepts_actions(session):

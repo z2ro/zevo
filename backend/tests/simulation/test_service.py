@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import select
 
 from app.config.settings import Settings
@@ -31,14 +33,15 @@ def build_world(session):
 
 def test_tick_persists_snapshots_advances_active_and_wild(session):
     world_id, active_id, wild_id = build_world(session)
-    service = SimulationService(Settings(database_url="", generations_per_tick=1_000,
+    service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1_000,
                                          simulation_random_seed=7, dev_mode=False))
-    summary = service.run_tick(session, world_id)
+    initial = session.get(World, world_id).last_simulated_at
+    summary = service.run_tick(session, world_id, now=initial + timedelta(seconds=5))
     session.commit()
     world = session.get(World, world_id)
     active, wild = session.get(Species, active_id), session.get(Species, wild_id)
     assert summary.species_processed == 2
-    assert (world.tick, world.generation) == (1, 1_000)
+    assert (world.tick, world.age_years) == (1, 1_000)
     assert active.generation == wild.generation == 1_000
     assert active.population != 100 and wild.population != 100
     assert len(list(session.scalars(select(SpeciesPopulationSnapshot)))) == 2
@@ -47,13 +50,14 @@ def test_tick_persists_snapshots_advances_active_and_wild(session):
 
 def test_same_seed_and_state_produce_same_tick(session):
     world_id, active_id, wild_id = build_world(session)
-    settings = Settings(database_url="", generations_per_tick=1_000, simulation_random_seed=99, dev_mode=True)
-    SimulationService(settings).run_tick(session, world_id)
+    settings = Settings(database_url="", species_generations_per_simulation_step=1_000, simulation_random_seed=99, dev_mode=True)
+    now = session.get(World, world_id).last_simulated_at + timedelta(seconds=5)
+    SimulationService(settings).run_tick(session, world_id, now=now)
     first = [(s.id, s.population, s.fitness, s.thermal_tolerance, s.mutation_rate)
              for s in session.scalars(select(Species).order_by(Species.id))]
     session.rollback()
     # rollback restores the exact pre-tick database state; identity map is expired.
-    SimulationService(settings).run_tick(session, world_id)
+    SimulationService(settings).run_tick(session, world_id, now=now)
     second = [(s.id, s.population, s.fitness, s.thermal_tolerance, s.mutation_rate)
               for s in session.scalars(select(Species).order_by(Species.id))]
     assert first == second
@@ -61,10 +65,11 @@ def test_same_seed_and_state_produce_same_tick(session):
 
 def test_dev_tick_records_selected_mutation_history(session):
     world_id, *_ = build_world(session)
-    settings = Settings(database_url="", generations_per_tick=1_000, simulation_random_seed=2, dev_mode=True)
+    settings = Settings(database_url="", species_generations_per_simulation_step=1_000, simulation_random_seed=2, dev_mode=True)
     service = SimulationService(settings)
+    now = session.get(World, world_id).last_simulated_at
     for _ in range(12):
-        service.run_tick(session, world_id)
+        now += timedelta(seconds=5); service.run_tick(session, world_id, now=now)
     histories = list(session.scalars(select(SpeciesTraitHistory)))
     assert histories
     assert all(change.old_value != change.new_value for change in histories)
@@ -91,8 +96,9 @@ def test_tick_isolated_to_requested_world(session):
     )
     session.add(other_species); session.commit()
 
-    summary = SimulationService(Settings(database_url="", generations_per_tick=1_000,
-                                          simulation_random_seed=3)).run_tick(session, first_world)
+    first = session.get(World, first_world)
+    summary = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1_000,
+                                          simulation_random_seed=3)).run_tick(session, first_world, now=first.last_simulated_at + timedelta(seconds=5))
     assert summary.species_processed == 2
     assert session.get(Species, active_id).generation == 1_000
     assert session.get(Species, wild_id).generation == 1_000
@@ -102,11 +108,12 @@ def test_tick_isolated_to_requested_world(session):
 
 def test_snapshot_fitness_matches_post_mutation_traits(session):
     world_id, *_ = build_world(session)
-    settings = Settings(database_url="", generations_per_tick=1_000,
+    settings = Settings(database_url="", species_generations_per_simulation_step=1_000,
                         simulation_random_seed=2, dev_mode=True)
     service = SimulationService(settings)
+    now = session.get(World, world_id).last_simulated_at
     for _ in range(12):
-        service.run_tick(session, world_id)
+        now += timedelta(seconds=5); service.run_tick(session, world_id, now=now)
     latest = session.scalars(
         select(SpeciesPopulationSnapshot).order_by(SpeciesPopulationSnapshot.id.desc())
     ).first()

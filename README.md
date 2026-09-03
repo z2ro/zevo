@@ -23,7 +23,7 @@ npm --prefix frontend run build
 docker compose config
 ```
 
-Variáveis principais estão em `.env.example`: `DEV_MODE`, intervalo/gerações do tick e seed da simulação. Em DEV, use a interface ou `POST /api/dev/simulate` para avançar ticks e facilitar `GRAY_BLOOD`.
+Variáveis principais estão em `.env.example`: `DEV_MODE`, intervalo da simulação, escala planetária e seed. O scheduler executa aproximadamente a cada 5 segundos; a idade de Eos-1 deriva do tempo real (por padrão, 5 segundos ≈ 1.000 anos), enquanto gerações são individuais por linhagem. Em DEV, `POST /api/dev/simulate` recebe `{"steps": N}` e `/api/dev/reset-world` restaura o mundo ao ano 0.
 
 ## Banco
 

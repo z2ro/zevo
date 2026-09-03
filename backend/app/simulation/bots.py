@@ -37,7 +37,7 @@ def run_bots(session: Session, world: World, rng: Random) -> int:
             session.add(Species(name=f"{player.username} lineage {world.tick}", creator_id=player.id,
                 habitat_id=habitats[index % len(habitats)].id, species_type=species_type,
                 status=SpeciesStatus.ACTIVE, is_player_controlled=True,
-                population=BALANCE.initial_population, generation=world.generation, fitness=1.0,
+                population=BALANCE.initial_population, generation=0, fitness=1.0,
                 strategy=strategy, energy_source=source, **traits))
             actions += 1
         elif player.bot_kind in ("WALLACE", "CHAOS") and rng.random() < 0.35:

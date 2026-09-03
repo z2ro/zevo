@@ -17,7 +17,7 @@ def start_scheduler() -> tuple[Event, Thread]:
 
     def loop() -> None:
         settings = get_settings()
-        while not stop.wait(settings.simulation_tick_seconds):
+        while not stop.wait(settings.simulation_interval_seconds):
             with get_session_factory()() as session:
                 try:
                     for world_id in session.scalars(select(World.id)):

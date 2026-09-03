@@ -1,6 +1,6 @@
 # Modelo de domínio — MVP v1
 
-`World` Eos-1 possui geração/tick monotônicos, ambiente e habitats. `Habitat` contém temperatura, radiação, pH, água, energias, recursos e capacidade. O bootstrap idempotente cria Eos-1, cinco habitats, Zero e DarwinBot, WallaceBot, MendelBot, GaiaBot e ChaosBot.
+`World` Eos-1 possui `age_years` derivado do relógio real; `tick` permanece apenas como passo técnico para seed/ordenação. Cada `Species` possui sua própria `generation` e começa em zero. `Habitat` contém temperatura, radiação, pH, água, energias, recursos e capacidade. O bootstrap idempotente cria Eos-1, cinco habitats, Zero e DarwinBot, WallaceBot, MendelBot, GaiaBot e ChaosBot.
 
 `Species` contém os campos do contrato da API, oito traits inteiros `[0,100]`, população agregada, habitat e enums: tipo `AUTOTROPH|CHEMOSYNTHETIC|HETEROTROPH|PARASITIC`; status `ACTIVE|WILD|EXTINCT`; energia `SOLAR|CHEMICAL|ORGANIC|PARASITIC`; strategy `COLONIZER|COMPETITOR|RESISTANT|OPPORTUNIST|PARASITE`. PARASITIC exige energia PARASITIC e strategy PARASITE.
 

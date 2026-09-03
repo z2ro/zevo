@@ -26,7 +26,8 @@ def event_candidates(scope: str, species, players, relations, mutations, world):
             values={"species.generation": item.generation, "species.population": item.population,
                     "species.status": item.status.value, "species.species_type": item.species_type.value,
                     "species.mutation_rate": item.mutation_rate},
-            metadata={"species_id": item.id, "player_id": item.creator_id}) for item in sorted(living.values(), key=lambda x: x.id)]
+            metadata={"species_id": item.id, "player_id": item.creator_id,
+                      "planet_age_years": world.age_years, "species_generation": item.generation}) for item in sorted(living.values(), key=lambda x: x.id)]
     if scope == "PARASITISM_RELATION":
         result = []
         for relation in sorted((r for r in relations if r.relation_type == RelationType.PARASITISM), key=lambda x: x.id):
@@ -39,7 +40,8 @@ def event_candidates(scope: str, species, players, relations, mutations, world):
                         "relation.infection_rate": relation.infection_rate, "relation.transmission_rate": relation.transmission_rate},
                 metadata={"parasite_species_id": parasite.id, "host_species_id": host.id,
                           "parasite_original_creator_id": parasite.creator_id, "host_creator_id": host.creator_id,
-                          "habitat_id": host.habitat_id, "generation": world.generation}))
+                          "habitat_id": host.habitat_id, "planet_age_years": world.age_years,
+                          "species_generation": parasite.generation}))
         return result
     if scope == "MUTATION":
         result = []
@@ -48,6 +50,7 @@ def event_candidates(scope: str, species, players, relations, mutations, world):
             if item:
                 result.append(EventCandidate(f"mutation:{species_id}", species=item, player=players.get(item.creator_id), mutation=mutation,
                     values={"mutation.fitness_delta": mutation.fitness_after - mutation.fitness_before},
-                    metadata={"species_id": item.id, "player_id": item.creator_id}))
+                    metadata={"species_id": item.id, "player_id": item.creator_id,
+                              "planet_age_years": world.age_years, "species_generation": item.generation}))
         return result
     raise ValueError(f"unsupported event scope: {scope}")

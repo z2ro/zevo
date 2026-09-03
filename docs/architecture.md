@@ -13,7 +13,7 @@ Zevo é um jogo persistente de evolução no qual cada jogador controla uma esp�
 
 ## Módulos e responsabilidades
 
-- `backend/app/simulation/`: motor puro do tick, regras determinísticas e aleatoriedade injetada.
+- `backend/app/simulation/`: motor puro do passo de simulação, regras determinísticas e aleatoriedade injetada.
 - `backend/app/events/`: definições, avaliação e consequências de eventos.
 - `backend/app/services/`: casos de uso e fronteiras transacionais.
 - backend restante: API, modelos persistentes, schemas e migrações.
@@ -32,11 +32,11 @@ Uma requisição HTTP entra no FastAPI, é validada por um schema, chama um serv
 
 ## Persistência
 
-PostgreSQL é a fonte de verdade e usa volume Compose. SQLAlchemy delimita transações; Alembic roda upgrade no startup antes da API e bootstrap idempotente cria Eos-1. Ticks/eventos são idempotentes por mundo/tick. O backend aguarda healthcheck do banco; frontend é servido na porta 5173.
+PostgreSQL é a fonte de verdade e usa volume Compose. SQLAlchemy delimita transações; Alembic roda upgrade no startup antes da API e bootstrap idempotente cria Eos-1. Eventos usam o passo interno para idempotência. O backend aguarda healthcheck do banco; frontend é servido na porta 5173.
 
-## Simulation tick
+## Passo de simulação
 
-O scheduler/backend solicita um tick independentemente do frontend. Em uma única unidade lógica: carrega snapshot, aplica pressão ambiental, crescimento, relações, seleção, mutação/extinção, comportamento WILD, avalia eventos e persiste estado e histórico. Falhas não podem deixar um tick parcialmente confirmado.
+O scheduler/backend solicita um passo independentemente do frontend. A idade planetária deriva do tempo real decorrido; gerações avançam individualmente para espécies vivas. Em uma única unidade lógica: carrega snapshot, aplica pressão ambiental, crescimento, relações, seleção, mutação/extinção, comportamento WILD, avalia eventos e persiste estado e histórico.
 
 ## Event engine
 

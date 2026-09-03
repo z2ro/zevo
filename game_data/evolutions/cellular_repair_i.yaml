@@ -3,7 +3,7 @@ name: Favorecer resistência celular
 category: DEFENSE
 level: 1
 cost: {biomass: 450, energy: 350, genetic_material: 25}
-duration_ticks: 12
+duration_years: 12000
 requirements: []
 pressure: {type: RADIATION, minimum_severity: MEDIUM}
 selection_bias: {trait: structural_resistance, strength: 0.25}

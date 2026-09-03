@@ -61,8 +61,8 @@ class BalanceConfig:
     migration_mortality: float = 0.08
     split_mortality: float = 0.05
     founder_expedition_fraction: float = 0.25
-    migration_duration_ticks: int = 1
-    strategy_cooldown_ticks: int = 4
+    migration_duration_years: int = 1_000
+    strategy_cooldown_years: int = 4_000
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
     resource_biomass_rate: float = 0.02

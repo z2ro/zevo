@@ -25,5 +25,6 @@ export const gameApi = {
   events: (limit = 100) => request<ListResponse<GameEvent>>(`/events?limit=${limit}`),
   legacy: () => request<Legacy>("/legacy"),
   currentPlayer: () => request<Player>("/players/current"),
-  simulate: (ticks: number) => post<World>("/dev/simulate", { ticks }),
+  simulate: (steps: number) => post<{ simulation_step: number; age_years: number }>("/dev/simulate", { steps }),
+  resetWorld: () => post<{ simulation_step: number; age_years: number }>("/dev/reset-world", {}),
 };

@@ -30,11 +30,11 @@ export interface Species {
 export interface PopulationSnapshot { generation: number; population: number; fitness: number; }
 export interface TraitHistory { generation: number; trait: keyof Traits; old_value: number; new_value: number; cause: string; }
 
-export interface Evolution { id: string; name: string; category: string; level: number; cost: Record<string, number>; duration_ticks: number; requirements: unknown[]; status: string | null; ticks_remaining?: number | null; available: boolean; can_start: boolean; blocked_reason?: string | null; pressure?: Record<string, string>; selection_bias?: Record<string, string | number>; tradeoffs?: Record<string, number>; }
+export interface Evolution { id: string; name: string; category: string; level: number; cost: Record<string, number>; duration_years: number; real_seconds_duration: number; requirements: unknown[]; status: string | null; years_remaining?: number | null; real_seconds_remaining?: number | null; available: boolean; can_start: boolean; blocked_reason?: string | null; pressure?: Record<string, string>; selection_bias?: Record<string, string | number>; tradeoffs?: Record<string, number>; }
 export interface SelectivePressure { type: string; score: number; severity: string; description: string; }
 
 export interface World {
-  id: number; name: string; generation: number; tick: number; temperature: number;
+  id: number; name: string; age_years: number; temperature: number;
   oxygen: number; co2: number; radiation: number; water_availability: number;
   average_ph: number; solar_energy: number; chemical_energy: number;
   geological_activity: number; species_alive: number; species_extinct: number;
@@ -48,8 +48,8 @@ export interface Habitat {
 }
 
 export interface Player { id: number; username: string; current_species_id: number | null; }
-export interface GameEvent { id: number; code: string; name: string; description: string; rarity: string; triggered_at: string; generation: number; historical: boolean; global_unique: boolean; metadata: Record<string, unknown>; }
-export interface HistoryEntry { kind: string; generation: number; title: string; description: string; species_id?: number; player_id?: number; metadata: Record<string, unknown>; }
+export interface GameEvent { id: number; code: string; name: string; description: string; rarity: string; triggered_at: string; planet_age_years: number; historical: boolean; global_unique: boolean; metadata: Record<string, unknown>; }
+export interface HistoryEntry { kind: string; planet_age_years: number; title: string; description: string; species_id?: number; player_id?: number; metadata: Record<string, unknown>; }
 export interface PlayerAction { id: number; action_type: string; status: string; species_id: number; payload: Record<string, unknown>; }
 export interface ListResponse<T> { items: T[]; }
 export interface SpeciesInput { name: string; species_type: SpeciesType; energy_source: EnergySource; strategy: Strategy; habitat_id: number; traits: Traits; }

@@ -4,7 +4,7 @@ import logging
 import random
 from copy import copy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class TickSummary:
     world_id: int
-    tick: int
-    generation: int
+    simulation_step: int
+    planet_age_years: int
     species_processed: int
     mutations: int
     extinctions: int
@@ -39,20 +39,31 @@ class SimulationService:
     """Transactional adapter around the pure simulation engine.
 
     The caller owns commit/rollback. PostgreSQL callers lock the world row, which
-    serializes scheduler and DEV ticks without coupling the engine to FastAPI.
+    serializes scheduler and DEV simulation steps without coupling the engine to FastAPI.
     """
 
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or get_settings()
 
-    def run_tick(self, session: Session, world_id: int) -> TickSummary:
+    def run_tick(self, session: Session, world_id: int, *, now: datetime | None = None) -> TickSummary:
         world = session.execute(select(World).where(World.id == world_id).with_for_update()).scalar_one()
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        previous = world.last_simulated_at
+        if previous.tzinfo is None:
+            previous = previous.replace(tzinfo=timezone.utc)
+        elapsed_seconds = max(0.0, (now - previous).total_seconds())
+        elapsed_years = int(elapsed_seconds * self.settings.planet_years_per_real_second)
+        if elapsed_years:
+            world.age_years += elapsed_years
+            world.last_simulated_at = previous + timedelta(seconds=elapsed_years / self.settings.planet_years_per_real_second)
         next_tick = world.tick + 1
         seed = self.settings.simulation_random_seed
         rng = random.Random(f"{seed if seed is not None else 'zevo'}:{world.id}:{next_tick}")
         world.tick = next_tick
-        complete_due_migrations(session, world.id, next_tick)
-        complete_due_focuses(session, world.id, next_tick)
+        complete_due_migrations(session, world.id, world.age_years)
+        complete_due_focuses(session, world.id, world.age_years)
         run_bots(session, world, rng)
         habitats = {h.id: h for h in session.scalars(select(Habitat).where(Habitat.world_id == world.id))}
         species_list = list(session.scalars(
@@ -64,7 +75,6 @@ class SimulationService:
         mutations = 0
         mutation_results = {}
         extinctions = 0
-        generation = world.generation + self.settings.generations_per_tick
         # Every species sees the same pre-update ecosystem, independent of DB order.
         snapshot = tuple(copy(species) for species in species_list)
         contexts = {
@@ -88,8 +98,8 @@ class SimulationService:
             species.energy += max(1, round(species.population * max(0.0, species.fitness) * BALANCE.resource_energy_rate))
             species.genetic_material += max(1, round(species.population * max(0.0, species.fitness) * BALANCE.resource_genetic_rate))
             habitat = habitats[species.habitat_id]
-            focus = active_focus_modifiers(session, species.id, next_tick)
-            bias, adaptive = active_adaptive_response(session, species.id, next_tick)
+            focus = active_focus_modifiers(session, species.id, world.age_years)
+            bias, adaptive = active_adaptive_response(session, species.id, world.age_years)
             modifiers = combine_modifiers(focus, adaptive)
             result = simulate_species(
                 species, habitat, rng, context=contexts[species.id], dev_mode=self.settings.dev_mode,
@@ -97,7 +107,7 @@ class SimulationService:
                 mortality_modifier=modifiers["mortality_modifier"],
                 mutation_bias=bias,
             )
-            species.generation += self.settings.generations_per_tick
+            species.generation += self.settings.species_generations_per_simulation_step
             if result.mutation:
                 mutations += 1
                 mutation_results[species.id] = result.mutation
@@ -109,10 +119,9 @@ class SimulationService:
             if result.extinct:
                 extinctions += 1
                 species.extinct_at = datetime.now(timezone.utc)
-                logger.info("species_extinct world_id=%s species_id=%s generation=%s", world.id, species.id, generation)
-        complete_due_evolutions(session, world.id, next_tick)
+                logger.info("species_extinct world_id=%s species_id=%s generation=%s", world.id, species.id, species.generation)
+        complete_due_evolutions(session, world.id, world.age_years)
         self._apply_species_environment(world, species_list)
-        world.generation = generation
         evaluate_tick_events(session, world, species_list, rng, self.settings.dev_mode, mutation_results)
         extinctions += self._reconcile_extinctions(species_list)
         for species in species_list:
@@ -121,15 +130,15 @@ class SimulationService:
                 fitness=species.fitness, traits=trait_values(species),
             ))
         session.add(WorldSnapshot(
-            world_id=world.id, generation=generation, tick=next_tick,
+            world_id=world.id, age_years=world.age_years, tick=next_tick,
             temperature=world.temperature, oxygen=world.oxygen, co2=world.co2, radiation=world.radiation,
         ))
         session.flush()
         logger.info(
-            "simulation_tick world_id=%s tick=%s generation=%s species=%s mutations=%s extinctions=%s",
-            world.id, next_tick, generation, len(species_list), mutations, extinctions,
+            "simulation_step world_id=%s step=%s planet_age_years=%s species=%s mutations=%s extinctions=%s",
+            world.id, next_tick, world.age_years, len(species_list), mutations, extinctions,
         )
-        return TickSummary(world.id, next_tick, generation, len(species_list), mutations, extinctions)
+        return TickSummary(world.id, next_tick, world.age_years, len(species_list), mutations, extinctions)
 
     @staticmethod
     def _reconcile_extinctions(species_list: list[Species]) -> int:

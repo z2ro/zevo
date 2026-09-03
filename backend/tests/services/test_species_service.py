@@ -86,11 +86,13 @@ def test_preview_reuses_public_simulation_shape(session):
 
 
 def test_create_sets_canonical_initial_state_and_prevents_second_controlled(session):
+    session.get(World, 1).age_years = 1_500_000
     data = SpeciesCreate.model_validate(payload())
     preview_before = preview_species(session, data)
     created = create_species(session, 1, data)
     session.commit()
     assert created.population == 100
+    assert created.generation == 0
     assert created.status is SpeciesStatus.ACTIVE
     assert created.is_player_controlled is True
     assert created.fitness == preview_before.estimated_fitness
@@ -120,7 +122,7 @@ def test_abandon_cancels_active_adaptive_response(session):
     species = create_species(session, 1, SpeciesCreate.model_validate(payload()))
     historical = SpeciesEvolution(
         species_id=species.id, evolution_id="CELLULAR_REPAIR_I", level=1,
-        status=EvolutionStatus.COMPLETED, started_at_tick=0, complete_at_tick=0,
+        status=EvolutionStatus.COMPLETED, started_at_year=0, complete_at_year=0,
     )
     session.add(historical)
     process = start_evolution(session, 1, species.id, "RADIATION_SHIELDING_I", 0)

@@ -59,20 +59,20 @@ def queue_migration(session: Session, player_id: int, species_id: int, destinati
         raise ActionServiceError("migration_pending", "Species already has a pending migration")
     action = PlayerAction(
         player_id=player_id, species_id=species.id, action_type=ActionType.MIGRATE,
-        status=ActionStatus.PENDING, execute_at_tick=world.tick + BALANCE.migration_duration_ticks,
+        status=ActionStatus.PENDING, execute_at_year=world.age_years + BALANCE.migration_duration_years,
         payload={"origin_habitat_id": species.habitat_id, "destination_habitat_id": destination.id},
     )
     session.add(action); session.flush()
     return action
 
 
-def complete_due_migrations(session: Session, world_id: int, current_tick: int) -> list[PlayerAction]:
+def complete_due_migrations(session: Session, world_id: int, current_age_years: int) -> list[PlayerAction]:
     actions = list(session.scalars(
         select(PlayerAction)
         .join(Species, PlayerAction.species_id == Species.id)
         .join(Habitat, Species.habitat_id == Habitat.id)
         .where(Habitat.world_id == world_id, PlayerAction.action_type == ActionType.MIGRATE,
-               PlayerAction.status == ActionStatus.PENDING, PlayerAction.execute_at_tick <= current_tick)
+               PlayerAction.status == ActionStatus.PENDING, PlayerAction.execute_at_year <= current_age_years)
         .order_by(PlayerAction.id)
         .with_for_update()
     ))
@@ -129,7 +129,7 @@ def change_strategy(session: Session, player_id: int, species_id: int, strategy:
         PlayerAction.action_type == ActionType.CHANGE_STRATEGY,
         PlayerAction.status == ActionStatus.COMPLETED,
     ).order_by(PlayerAction.id.desc()))
-    if previous and int(previous.payload.get("cooldown_until_tick", 0)) > world.tick:
+    if previous and int(previous.payload.get("cooldown_until_year", 0)) > world.age_years:
         raise ActionServiceError("strategy_cooldown", "Strategy change is on cooldown")
     old = species.strategy.value
     species.strategy = strategy
@@ -137,7 +137,7 @@ def change_strategy(session: Session, player_id: int, species_id: int, strategy:
         player_id=player_id, species_id=species.id, action_type=ActionType.CHANGE_STRATEGY,
         status=ActionStatus.COMPLETED, completed_at=datetime.now(timezone.utc),
         payload={"old_strategy": old, "new_strategy": strategy.value,
-                 "cooldown_until_tick": world.tick + BALANCE.strategy_cooldown_ticks},
+                 "cooldown_until_year": world.age_years + BALANCE.strategy_cooldown_years},
     ))
     session.flush()
     return species
@@ -157,14 +157,14 @@ def queue_focus(session: Session, player_id: int, species_id: int, action_type: 
         raise ActionServiceError("focus_active", "Species already has an active focus")
     action = PlayerAction(
         player_id=player_id, species_id=species.id, action_type=action_type,
-        status=ActionStatus.PENDING, execute_at_tick=world.tick + focus_duration(action_type.value),
-        payload={"modifiers": focus_modifiers(action_type.value), "started_at_tick": world.tick},
+        status=ActionStatus.PENDING, execute_at_year=world.age_years + focus_duration(action_type.value),
+        payload={"modifiers": focus_modifiers(action_type.value), "started_at_year": world.age_years},
     )
     session.add(action); session.flush()
     return action
 
 
-def active_focus_modifiers(session: Session, species_id: int, current_tick: int) -> dict[str, float]:
+def active_focus_modifiers(session: Session, species_id: int, current_age_years: int) -> dict[str, float]:
     species = session.get(Species, species_id)
     if species is None or species.status is not SpeciesStatus.ACTIVE or not species.is_player_controlled:
         return {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
@@ -172,12 +172,12 @@ def active_focus_modifiers(session: Session, species_id: int, current_tick: int)
         PlayerAction.species_id == species_id,
         PlayerAction.action_type.in_((ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),
         PlayerAction.status == ActionStatus.PENDING,
-        PlayerAction.execute_at_tick >= current_tick,
+        PlayerAction.execute_at_year >= current_age_years,
     ).order_by(PlayerAction.id.desc()))
     return dict(action.payload["modifiers"]) if action else {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
 
-def complete_due_focuses(session: Session, world_id: int, current_tick: int) -> list[PlayerAction]:
+def complete_due_focuses(session: Session, world_id: int, current_age_years: int) -> list[PlayerAction]:
     actions = list(session.scalars(
         select(PlayerAction)
         .join(Species, PlayerAction.species_id == Species.id)
@@ -185,7 +185,7 @@ def complete_due_focuses(session: Session, world_id: int, current_tick: int) -> 
         .where(Habitat.world_id == world_id,
                PlayerAction.action_type.in_((ActionType.FOCUS_REPRODUCTION, ActionType.FOCUS_SURVIVAL)),
                PlayerAction.status == ActionStatus.PENDING,
-               PlayerAction.execute_at_tick < current_tick)
+               PlayerAction.execute_at_year < current_age_years)
         .order_by(PlayerAction.id)
         .with_for_update()
     ))

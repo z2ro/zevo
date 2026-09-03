@@ -56,7 +56,7 @@ def test_invalid_in_operand_and_full_unknown_field():
 def test_adaptive_response_validation(tmp_path: Path, extra: str):
     root = tmp_path / "evolutions"; root.mkdir()
     (root / "response.yaml").write_text(
-        "id: RESPONSE\nname: Response\ncategory: DEFENSE\ncost: {energy: 1}\nduration_ticks: 2\n"
+        "id: RESPONSE\nname: Response\ncategory: DEFENSE\ncost: {energy: 1}\nduration_years: 2000\n"
         "pressure: {type: RADIATION, minimum_severity: MEDIUM}\n"
         "selection_bias: {trait: radiation_tolerance, strength: 0.25}\n" + extra + "\n"
     )

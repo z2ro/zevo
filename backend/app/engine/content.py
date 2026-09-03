@@ -88,7 +88,7 @@ class ContentDefinition(BaseModel):
     scope: str | None = None
     global_unique: bool = False
     repeat_policy: str = "ALWAYS"
-    duration_ticks: int | None = Field(default=None, ge=1)
+    duration_years: int | None = Field(default=None, ge=1)
     modifiers: dict[str, float] = Field(default_factory=dict)
     trigger: ConditionSpec | None = None
     chance: float | None = Field(default=None, ge=0, le=1)
@@ -124,12 +124,12 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"probabilistic event {path} requires chance")
         if definition.repeat_policy not in {"ALWAYS", "ONCE_PER_WORLD", "ONCE_PER_SPECIES", "ONCE_PER_PLAYER"}:
             raise ValueError(f"unknown repeat_policy {definition.repeat_policy} in {path}")
-        if root.name == "actions" and (definition.duration_ticks is None or not definition.modifiers):
-            raise ValueError(f"action content {path} requires duration_ticks and modifiers")
+        if root.name == "actions" and (definition.duration_years is None or not definition.modifiers):
+            raise ValueError(f"action content {path} requires duration_years and modifiers")
         if root.name == "strategies" and (not definition.name or "fitness_bonus" not in definition.modifiers):
             raise ValueError(f"strategy content {path} requires name and fitness_bonus")
-        if root.name == "evolutions" and (not definition.name or definition.duration_ticks is None or not definition.cost):
-            raise ValueError(f"evolution content {path} requires name, cost and duration_ticks")
+        if root.name == "evolutions" and (not definition.name or definition.duration_years is None or not definition.cost):
+            raise ValueError(f"evolution content {path} requires name, cost and duration_years")
         if root.name == "evolutions":
             trait, strength = definition.selection_bias.get("trait"), definition.selection_bias.get("strength")
             if (definition.pressure.get("type") not in PRESSURE_TYPES

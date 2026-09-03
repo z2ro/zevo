@@ -73,7 +73,7 @@ async def test_health_world_and_species_flow(monkeypatch):
         player = event_session.scalar(select(Player).where(Player.username == "Zero"))
         eos = event_session.scalar(select(World).where(World.name == "Eos-1"))
         event_session.add(GameEvent(world_id=eos.id, code="TEST_FIRST", name="Test First",
-            description="Contract event", rarity=EventRarity.WORLD_FIRST, generation=eos.generation,
+            description="Contract event", rarity=EventRarity.WORLD_FIRST, planet_age_years=eos.age_years,
             historical=True, global_unique=True, repeat_scope="WORLD", player_id=player.id,
             species_id=created_json["id"], event_metadata={"source": "test"}))
         event_session.commit()
@@ -89,8 +89,14 @@ async def test_health_world_and_species_flow(monkeypatch):
     assert second.status_code == 201
     all_species = (await client.get("/api/world/species")).json()["items"]
     assert any(s["id"] == created_json["id"] and s["status"] == "WILD" and "traits" in s for s in all_species)
-    assert (await client.post("/api/dev/simulate", json={"ticks": 1})).status_code == 404
+    assert (await client.post("/api/dev/simulate", json={"steps": 1})).status_code == 404
     monkeypatch.setenv("DEV_MODE", "true"); get_settings.cache_clear()
-    assert (await client.post("/api/dev/simulate", json={"ticks": 1})).json()["tick"] == 1
+    simulated = (await client.post("/api/dev/simulate", json={"steps": 1})).json()
+    assert simulated["simulation_step"] == 1 and simulated["age_years"] >= 1_000
+    reset = (await client.post("/api/dev/reset-world", json={})).json()
+    assert reset == {"age_years": 0, "simulation_step": 0}
+    assert (await client.get("/api/species/current")).status_code == 404
+    assert (await client.get("/api/events")).json()["items"] == []
+    assert (await client.get("/api/players/current")).json()["id"] == player.id
     get_settings.cache_clear()
     await client.aclose(); app.dependency_overrides.clear(); engine.dispose()

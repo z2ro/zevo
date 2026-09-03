@@ -10,7 +10,7 @@ from app.models import EventRarity, GameEvent, Habitat, Player, Species, Species
 
 def make_event(world_id, code, **overrides):
     values = dict(world_id=world_id, code=code, name=code, description="test",
-                  rarity=EventRarity.COMMON, generation=1, historical=True,
+                  rarity=EventRarity.COMMON, planet_age_years=1, historical=True,
                   global_unique=False, repeat_scope="ALWAYS", event_metadata={})
     values.update(overrides)
     return GameEvent(**values)

@@ -1,4 +1,5 @@
 import pytest
+from datetime import timedelta
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -34,11 +35,11 @@ def test_adaptive_response_deducts_resources_biases_then_completes_without_direc
     baseline = update_population(100, 1.5, 1_000, 50)
     adapted = update_population(100, 1.5, 1_000, 50, **modifiers)
     assert adapted.current < baseline.current
-    complete_due_evolutions(session, world_id, 13)
+    complete_due_evolutions(session, world_id, 12_001)
     row = session.scalar(select(SpeciesEvolution).where(SpeciesEvolution.species_id == species_id))
     assert row.status is EvolutionStatus.COMPLETED
     assert species.metabolic_efficiency == trait
-    expired_bias, expired_modifiers = active_adaptive_response(session, species_id, 13)
+    expired_bias, expired_modifiers = active_adaptive_response(session, species_id, 12_001)
     assert expired_bias is None
     assert expired_modifiers == {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
 
@@ -55,16 +56,16 @@ def test_focus_and_adaptive_tradeoffs_compose_multiplicatively():
 def test_adaptive_response_is_active_for_exact_duration(session):
     world_id, species_id, _ = build_world(session)
     response = SpeciesEvolution(species_id=species_id, evolution_id="METABOLIC_EFFICIENCY_I", level=1,
-                                status=EvolutionStatus.IN_PROGRESS, started_at_tick=10, complete_at_tick=13)
+                                status=EvolutionStatus.IN_PROGRESS, started_at_year=10_000, complete_at_year=13_000)
     session.add(response); session.flush()
-    assert active_adaptive_response(session, species_id, 10)[0] is None
-    for tick in (11, 12, 13):
-        bias, modifiers = active_adaptive_response(session, species_id, tick)
+    assert active_adaptive_response(session, species_id, 10_000)[0] is None
+    for age in (11_000, 12_000, 13_000):
+        bias, modifiers = active_adaptive_response(session, species_id, age)
         assert bias is not None and modifiers["reproduction_modifier"] == .95
-    complete_due_evolutions(session, world_id, 13)
+    complete_due_evolutions(session, world_id, 13_000)
     assert response.status is EvolutionStatus.IN_PROGRESS
-    assert active_adaptive_response(session, species_id, 14) == (None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0})
-    complete_due_evolutions(session, world_id, 14)
+    assert active_adaptive_response(session, species_id, 14_000) == (None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0})
+    complete_due_evolutions(session, world_id, 14_000)
     assert response.status is EvolutionStatus.COMPLETED
 
 
@@ -77,7 +78,7 @@ def test_tick_completes_adaptation_only_in_processed_world(session):
     world_a, species_a, _ = build_world(session)
     first = session.get(Species, species_a)
     session.get(Habitat, first.habitat_id).solar_energy = 0
-    session.get(World, world_a).tick = 12
+    session.get(World, world_a).age_years = 12_000
     response_a = start_evolution(session, first.creator_id, first.id, "METABOLIC_EFFICIENCY_I", 0)
     other_world = World(name="Other", generation=0, tick=0, temperature=50, oxygen=1, co2=70, radiation=30, water_availability=80, average_ph=5, solar_energy=70, chemical_energy=60, geological_activity=50)
     session.add(other_world); session.flush()
@@ -86,9 +87,11 @@ def test_tick_completes_adaptation_only_in_processed_world(session):
     session.add_all([other_habitat, other_player]); session.flush()
     other = Species(name="Other", creator_id=other_player.id, habitat_id=other_habitat.id, species_type=SpeciesType.AUTOTROPH, status=SpeciesStatus.ACTIVE, is_player_controlled=True, population=100, strategy=Strategy.COLONIZER, energy_source=EnergySource.SOLAR, thermal_tolerance=10, radiation_tolerance=10, ph_tolerance=10, metabolic_efficiency=10, reproduction_rate=10, mutation_rate=10, energy_efficiency=10, structural_resistance=10)
     session.add(other); session.flush()
-    response_b = SpeciesEvolution(species_id=other.id, evolution_id="METABOLIC_EFFICIENCY_I", level=1, status=EvolutionStatus.IN_PROGRESS, started_at_tick=0, complete_at_tick=12)
+    response_b = SpeciesEvolution(species_id=other.id, evolution_id="METABOLIC_EFFICIENCY_I", level=1, status=EvolutionStatus.IN_PROGRESS, started_at_year=0, complete_at_year=12_000)
     session.add(response_b); session.flush()
-    SimulationService(Settings(database_url="", generations_per_tick=1, simulation_random_seed=1)).run_tick(session, world_a)
+    service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=1))
+    first_world = session.get(World, world_a)
+    service.run_tick(session, world_a, now=first_world.last_simulated_at + timedelta(seconds=5))
     assert response_a.status is EvolutionStatus.COMPLETED
     assert response_b.status is EvolutionStatus.IN_PROGRESS
 
@@ -97,7 +100,7 @@ def test_resources_produce_during_tick(session):
     world_id, species_id, _ = build_world(session)
     species = session.get(Species, species_id)
     before = (species.biomass, species.energy, species.genetic_material)
-    SimulationService(Settings(database_url="", generations_per_tick=1, simulation_random_seed=1)).run_tick(session, world_id)
+    SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=1)).run_tick(session, world_id)
     assert (species.biomass, species.energy, species.genetic_material) > before
 
 
@@ -112,9 +115,9 @@ def test_completed_response_can_repeat_and_eligibility_explains_blocks(session):
     assert adaptive_response_eligibility(session, species, metabolic) == (True, True, None)
     start_evolution(session, species.creator_id, species.id, metabolic.id, 0)
     assert adaptive_response_eligibility(session, species, radiation) == (True, False, "RESPONSE_ACTIVE")
-    complete_due_evolutions(session, world_id, 13)
+    complete_due_evolutions(session, world_id, 12_001)
     assert adaptive_response_eligibility(session, species, metabolic) == (True, True, None)
-    start_evolution(session, species.creator_id, species.id, metabolic.id, 14)
+    start_evolution(session, species.creator_id, species.id, metabolic.id, 14_000)
     assert len(list(session.scalars(select(SpeciesEvolution).where(
         SpeciesEvolution.species_id == species.id, SpeciesEvolution.evolution_id == metabolic.id,
     )))) == 2

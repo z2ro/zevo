@@ -12,7 +12,7 @@ def test_tick_applies_competition_from_preupdate_snapshot(session):
     world_id, active_id, wild_id = build_world(session)
     species = session.get(Species, active_id)
     without_competition = calculate_fitness(species, session.get(Habitat, species.habitat_id)).value
-    service = SimulationService(Settings(database_url="", generations_per_tick=1, simulation_random_seed=17))
+    service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=17))
     service.run_tick(session, world_id)
     assert session.get(Species, active_id).fitness < without_competition
     assert session.get(Species, active_id).fitness == session.get(Species, wild_id).fitness
@@ -32,7 +32,7 @@ def test_tick_establishes_relation_for_wild_parasite(session):
     host = session.get(Species, active_id)
     host.population = 5000
     host.structural_resistance = 0
-    service = SimulationService(Settings(database_url="", generations_per_tick=1, simulation_random_seed=17))
+    service = SimulationService(Settings(database_url="", species_generations_per_simulation_step=1, simulation_random_seed=17))
     service.run_tick(session, world_id)
     relation = session.scalar(select(SpeciesRelation))
     assert relation and relation.predator_or_parasite_id == parasite.id

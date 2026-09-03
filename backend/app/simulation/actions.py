@@ -65,6 +65,6 @@ def focus_modifiers(action_type: str) -> dict[str, float]:
 
 def focus_duration(action_type: str) -> int:
     definition = CONTENT["actions"].get(action_type.lower())
-    if definition is None or definition.duration_ticks is None:
+    if definition is None or definition.duration_years is None:
         raise ValueError(f"Unsupported focus action: {action_type}")
-    return definition.duration_ticks
+    return definition.duration_years

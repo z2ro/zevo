@@ -54,9 +54,9 @@ def test_only_one_controlled_species_per_player(session):
 
 def test_global_historical_flag_is_unique(session):
     world = bootstrap_world(session)
-    session.add(HistoricalFlag(world_id=world.id, code="FIRST_STABLE_LIFE", generation=1000))
+    session.add(HistoricalFlag(world_id=world.id, code="FIRST_STABLE_LIFE", planet_age_years=1000))
     session.commit()
-    session.add(HistoricalFlag(world_id=world.id, code="FIRST_STABLE_LIFE", generation=2000))
+    session.add(HistoricalFlag(world_id=world.id, code="FIRST_STABLE_LIFE", planet_age_years=2000))
     with pytest.raises(IntegrityError):
         session.commit()
 

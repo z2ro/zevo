@@ -66,7 +66,7 @@ class EventService:
             name=definition.name,
             description=definition.description,
             rarity=definition.rarity,
-            generation=context.world.generation,
+            planet_age_years=context.world.age_years,
             historical=definition.historical,
             global_unique=definition.global_unique or definition.repeat_policy == RepeatPolicy.ONCE_PER_WORLD,
             idempotency_key=idempotency_key,
@@ -111,7 +111,7 @@ class EventService:
             species_id=species_id,
             player_id=player_id,
             code=code,
-            generation=context.world.generation,
+            planet_age_years=context.world.age_years,
             flag_metadata=dict(metadata or {}),
         )
         try:

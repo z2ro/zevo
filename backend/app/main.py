@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -24,6 +25,7 @@ from app.services.scheduler import start_scheduler
 from app.services.simulation_service import SimulationService
 from app.services.species_service import SpeciesServiceError, abandon_species, create_species, preview_species
 from app.services.evolution_service import EvolutionServiceError, adaptive_response_eligibility, pressures_for_species, start_evolution
+from app.services.world_service import reset_world
 
 
 @asynccontextmanager
@@ -72,7 +74,7 @@ class SplitBody(BaseModel):
 class StrategyBody(BaseModel): strategy: Strategy
 class SimulateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    ticks: int = Field(ge=1, le=1000)
+    steps: int = Field(ge=1, le=1000)
 
 
 TRAIT_FIELDS = (
@@ -150,14 +152,15 @@ async def metrics(db: Db):
     alive = db.scalar(select(func.count()).select_from(Species).where(Species.status != SpeciesStatus.EXTINCT)) or 0
     extinct = db.scalar(select(func.count()).select_from(Species).where(Species.status == SpeciesStatus.EXTINCT)) or 0
     events = db.scalar(select(func.count()).select_from(GameEvent)) or 0
-    ticks = db.scalar(select(func.coalesce(func.sum(World.tick), 0))) or 0
-    body = f"simulation_ticks_total {ticks}\nspecies_alive {alive}\nspecies_extinct_total {extinct}\nevents_total {events}\n"
+    steps = db.scalar(select(func.coalesce(func.sum(World.tick), 0))) or 0
+    body = f"simulation_steps_total {steps}\nspecies_alive {alive}\nspecies_extinct_total {extinct}\nevents_total {events}\n"
     return Response(body, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/world")
 async def get_world(db: Db):
     value = world(db); data = row(value)
+    data.pop("generation", None); data.pop("tick", None); data.pop("last_simulated_at", None)
     data.update(dev_mode=get_settings().dev_mode,
         species_alive=db.scalar(select(func.count()).select_from(Species).join(Habitat).where(Habitat.world_id == value.id, Species.status != SpeciesStatus.EXTINCT)),
         species_extinct=db.scalar(select(func.count()).select_from(Species).join(Habitat).where(Habitat.world_id == value.id, Species.status == SpeciesStatus.EXTINCT)))
@@ -197,12 +200,13 @@ async def species_detail(species_id: int, db: Db):
 async def species_evolutions(species_id: int, db: Db):
     if not db.get(Species, species_id): raise HTTPException(404, "Species not found")
     species = db.get(Species, species_id)
-    current_tick = db.scalar(select(World.tick).join(Habitat, Habitat.world_id == World.id).where(Habitat.id == species.habitat_id)) or 0
+    current_age = db.scalar(select(World.age_years).join(Habitat, Habitat.world_id == World.id).where(Habitat.id == species.habitat_id)) or 0
     items = []
     for key, spec in sorted(CONTENT["evolutions"].items()):
         available, can_start, blocked_reason = adaptive_response_eligibility(db, species, spec)
         process = db.scalar(select(SpeciesEvolution).where(SpeciesEvolution.species_id == species_id, SpeciesEvolution.evolution_id == key).order_by(SpeciesEvolution.id.desc()))
-        items.append({"id": key, "name": spec.name, "category": spec.category, "level": spec.level, "cost": spec.cost, "duration_ticks": spec.duration_ticks, "requirements": spec.requirements, "pressure": spec.pressure, "selection_bias": spec.selection_bias, "tradeoffs": spec.tradeoffs, "available": available, "can_start": can_start, "blocked_reason": blocked_reason, "status": process.status if process else None, "ticks_remaining": max(0, process.complete_at_tick - current_tick) if process and process.status.value == "IN_PROGRESS" else None})
+        remaining = max(0, process.complete_at_year - current_age) if process and process.status.value == "IN_PROGRESS" else None
+        items.append({"id": key, "name": spec.name, "category": spec.category, "level": spec.level, "cost": spec.cost, "duration_years": spec.duration_years, "real_seconds_duration": spec.duration_years / get_settings().planet_years_per_real_second, "requirements": spec.requirements, "pressure": spec.pressure, "selection_bias": spec.selection_bias, "tradeoffs": spec.tradeoffs, "available": available, "can_start": can_start, "blocked_reason": blocked_reason, "status": process.status if process else None, "years_remaining": remaining, "real_seconds_remaining": remaining / get_settings().planet_years_per_real_second if remaining is not None else None})
     return {"items": items}
 
 
@@ -216,7 +220,7 @@ async def species_pressures(species_id: int, db: Db):
 @app.post("/api/species/{species_id}/evolutions/{evolution_id}", status_code=202)
 async def begin_evolution(species_id: int, evolution_id: str, db: Db):
     try:
-        result = start_evolution(db, zero(db).id, species_id, evolution_id, world(db).tick); db.commit(); return row(result)
+        result = start_evolution(db, zero(db).id, species_id, evolution_id, world(db).age_years); db.commit(); return row(result)
     except EvolutionServiceError as exc:
         raise HTTPException(exc.status_code, {"error": {"code": exc.code, "message": exc.message, "details": {}}})
 
@@ -261,12 +265,12 @@ async def abandon(species_id: int, db: Db): return action(lambda: abandon_specie
 
 
 @app.get("/api/events")
-async def events(db: Db, limit: int = Query(100, ge=1, le=1000)): return {"items": [serialize_event(x) for x in db.scalars(select(GameEvent).order_by(GameEvent.generation.desc()).limit(limit))]}
+async def events(db: Db, limit: int = Query(100, ge=1, le=1000)): return {"items": [serialize_event(x) for x in db.scalars(select(GameEvent).order_by(GameEvent.planet_age_years.desc()).limit(limit))]}
 
 
 @app.get("/api/world/history")
 async def history(db: Db, limit: int = Query(100, ge=1, le=1000)):
-    items = [{"kind": "event", "generation": event["generation"], "title": event["name"], "description": event["description"], "species_id": event["species_id"], "player_id": event["player_id"], "metadata": event["metadata"]} for event in (serialize_event(e) for e in db.scalars(select(GameEvent).order_by(GameEvent.generation.desc()).limit(limit)))]
+    items = [{"kind": "event", "planet_age_years": event["planet_age_years"], "title": event["name"], "description": event["description"], "species_id": event["species_id"], "player_id": event["player_id"], "metadata": event["metadata"]} for event in (serialize_event(e) for e in db.scalars(select(GameEvent).order_by(GameEvent.planet_age_years.desc()).limit(limit)))]
     return {"items": items[:limit]}
 
 
@@ -275,7 +279,7 @@ async def legacy(db: Db):
     player = zero(db); items = list(db.scalars(select(Species).where(Species.creator_id == player.id).order_by(Species.id)))
     world_firsts = list(db.scalars(select(GameEvent).where(
         GameEvent.player_id == player.id, GameEvent.rarity == EventRarity.WORLD_FIRST
-    ).order_by(GameEvent.generation.desc())))
+    ).order_by(GameEvent.planet_age_years.desc())))
     return {"total_species": len(items), "active": sum(s.status == SpeciesStatus.ACTIVE for s in items),
         "wild": sum(s.status == SpeciesStatus.WILD for s in items),
         "extinct": sum(s.status == SpeciesStatus.EXTINCT for s in items),
@@ -291,6 +295,20 @@ async def current_player(db: Db): return serialize_player(zero(db), db)
 @app.post("/api/dev/simulate")
 async def simulate(body: SimulateBody, db: Db):
     if not get_settings().dev_mode: raise HTTPException(404, "DEV mode disabled")
-    value = world(db); service = SimulationService()
-    for _ in range(body.ticks): service.run_tick(db, value.id)
-    db.commit(); db.refresh(value); return row(value)
+    value = world(db); settings = get_settings(); service = SimulationService(settings)
+    simulated_at = value.last_simulated_at
+    if simulated_at.tzinfo is None: simulated_at = simulated_at.replace(tzinfo=timezone.utc)
+    simulated_at = max(simulated_at, datetime.now(timezone.utc))
+    for _ in range(body.steps):
+        simulated_at += timedelta(seconds=settings.simulation_interval_seconds)
+        service.run_tick(db, value.id, now=simulated_at)
+    db.commit(); db.refresh(value)
+    return {"simulation_step": value.tick, "age_years": value.age_years}
+
+
+@app.post("/api/dev/reset-world")
+async def dev_reset_world(db: Db):
+    if not get_settings().dev_mode: raise HTTPException(404, "DEV mode disabled")
+    value = reset_world(db, world(db).id)
+    db.commit()
+    return {"age_years": value.age_years, "simulation_step": value.tick}

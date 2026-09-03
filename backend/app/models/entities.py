@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -23,6 +23,8 @@ class World(Base):
     name: Mapped[str] = mapped_column(String(80), unique=True)
     generation: Mapped[int] = mapped_column(Integer, default=0)
     tick: Mapped[int] = mapped_column(Integer, default=0)
+    age_years: Mapped[int] = mapped_column(BigInteger, default=0)
+    last_simulated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     temperature: Mapped[float] = mapped_column(Float)
     oxygen: Mapped[float] = mapped_column(Float)
     co2: Mapped[float] = mapped_column(Float)
@@ -90,7 +92,7 @@ class Species(Base):
 class WorldSnapshot(Base):
     __tablename__ = "world_snapshots"
     id: Mapped[int] = mapped_column(primary_key=True); world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"), index=True)
-    generation: Mapped[int] = mapped_column(Integer); tick: Mapped[int] = mapped_column(Integer)
+    age_years: Mapped[int] = mapped_column(BigInteger); tick: Mapped[int] = mapped_column(Integer)
     temperature: Mapped[float] = mapped_column(Float); oxygen: Mapped[float] = mapped_column(Float); co2: Mapped[float] = mapped_column(Float); radiation: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("world_id", "tick"),)
@@ -102,7 +104,7 @@ class SpeciesEvolution(Base):
     species_id: Mapped[int] = mapped_column(ForeignKey("species.id", ondelete="CASCADE"), index=True)
     evolution_id: Mapped[str] = mapped_column(String(80)); level: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[EvolutionStatus] = mapped_column(enum(EvolutionStatus, "evolution_status"))
-    started_at_tick: Mapped[int] = mapped_column(Integer); complete_at_tick: Mapped[int] = mapped_column(Integer)
+    started_at_year: Mapped[int] = mapped_column(BigInteger); complete_at_year: Mapped[int] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -135,7 +137,7 @@ class GameEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True); world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id"), index=True)
     code: Mapped[str] = mapped_column(String(80)); name: Mapped[str] = mapped_column(String(120)); description: Mapped[str] = mapped_column(Text)
     rarity: Mapped[EventRarity] = mapped_column(enum(EventRarity, "event_rarity")); triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    generation: Mapped[int] = mapped_column(Integer); historical: Mapped[bool] = mapped_column(Boolean, default=True); global_unique: Mapped[bool] = mapped_column(Boolean, default=False)
+    planet_age_years: Mapped[int] = mapped_column(BigInteger); historical: Mapped[bool] = mapped_column(Boolean, default=True); global_unique: Mapped[bool] = mapped_column(Boolean, default=False)
     idempotency_key: Mapped[str | None] = mapped_column(String(160))
     repeat_scope: Mapped[str] = mapped_column(String(16), default="ALWAYS", server_default="ALWAYS")
     species_id: Mapped[int | None] = mapped_column(ForeignKey("species.id")); player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id")); event_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
@@ -155,14 +157,14 @@ class PlayerAction(Base):
     __tablename__ = "player_actions"
     id: Mapped[int] = mapped_column(primary_key=True); player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True); species_id: Mapped[int] = mapped_column(ForeignKey("species.id"), index=True)
     action_type: Mapped[ActionType] = mapped_column(enum(ActionType, "action_type")); status: Mapped[ActionStatus] = mapped_column(enum(ActionStatus, "action_status"), default=ActionStatus.PENDING)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict); execute_at_tick: Mapped[int | None] = mapped_column(Integer); created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow); completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict); execute_at_year: Mapped[int | None] = mapped_column(BigInteger); created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow); completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class HistoricalFlag(Base):
     __tablename__ = "historical_flags"
     id: Mapped[int] = mapped_column(primary_key=True); world_id: Mapped[int] = mapped_column(ForeignKey("worlds.id"), index=True)
     species_id: Mapped[int | None] = mapped_column(ForeignKey("species.id"), index=True); player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), index=True)
-    code: Mapped[str] = mapped_column(String(100)); generation: Mapped[int] = mapped_column(Integer); flag_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict); created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    code: Mapped[str] = mapped_column(String(100)); planet_age_years: Mapped[int] = mapped_column(BigInteger); flag_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict); created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (
         CheckConstraint("species_id IS NULL OR player_id IS NULL", name="ck_historical_flag_single_subject"),
         Index("uq_historical_flag_global", "world_id", "code", unique=True, postgresql_where=text("species_id IS NULL AND player_id IS NULL"), sqlite_where=text("species_id IS NULL AND player_id IS NULL")),
