@@ -7,7 +7,7 @@ from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, Fo
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from .enums import ActionStatus, ActionType, EnergySource, EventRarity, RelationType, SpeciesStatus, SpeciesType, Strategy, TraitChangeCause
+from .enums import ActionStatus, ActionType, EnergySource, EventRarity, EvolutionStatus, RelationType, SpeciesStatus, SpeciesType, Strategy, TraitChangeCause
 
 
 def utcnow() -> datetime:
@@ -74,6 +74,8 @@ class Species(Base):
     energy_efficiency: Mapped[int] = mapped_column(Integer); structural_resistance: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     abandoned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True)); extinct_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    biomass: Mapped[int] = mapped_column(Integer, default=1000); energy: Mapped[int] = mapped_column(Integer, default=500)
+    genetic_material: Mapped[int] = mapped_column(Integer, default=50); adaptation_points: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (
         CheckConstraint("population >= 0", name="ck_species_population_nonnegative"),
         CheckConstraint("thermal_tolerance BETWEEN 0 AND 100 AND radiation_tolerance BETWEEN 0 AND 100 AND ph_tolerance BETWEEN 0 AND 100 AND metabolic_efficiency BETWEEN 0 AND 100 AND reproduction_rate BETWEEN 0 AND 100 AND mutation_rate BETWEEN 0 AND 100 AND energy_efficiency BETWEEN 0 AND 100 AND structural_resistance BETWEEN 0 AND 100", name="ck_species_traits_range"),
@@ -92,6 +94,17 @@ class WorldSnapshot(Base):
     temperature: Mapped[float] = mapped_column(Float); oxygen: Mapped[float] = mapped_column(Float); co2: Mapped[float] = mapped_column(Float); radiation: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("world_id", "tick"),)
+
+
+class SpeciesEvolution(Base):
+    __tablename__ = "species_evolutions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    species_id: Mapped[int] = mapped_column(ForeignKey("species.id", ondelete="CASCADE"), index=True)
+    evolution_id: Mapped[str] = mapped_column(String(80)); level: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[EvolutionStatus] = mapped_column(enum(EvolutionStatus, "evolution_status"))
+    started_at_tick: Mapped[int] = mapped_column(Integer); complete_at_tick: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SpeciesPopulationSnapshot(Base):

@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { GameEvent, Habitat, HistoryEntry, Legacy, ListResponse, Player, PlayerAction, Species, SpeciesInput, Strategy, ViabilityPreview, World } from "../types/api";
+import type { Evolution, GameEvent, Habitat, HistoryEntry, Legacy, ListResponse, Player, PlayerAction, SelectivePressure, Species, SpeciesInput, Strategy, ViabilityPreview, World } from "../types/api";
 
 const post = <T>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
@@ -11,6 +11,9 @@ export const gameApi = {
   species: () => request<ListResponse<Species>>("/species"),
   currentSpecies: () => request<Species>("/species/current"),
   speciesById: (id: number) => request<Species>(`/species/${id}`),
+  evolutions: (id: number) => request<ListResponse<Evolution>>(`/species/${id}/evolutions`),
+  pressures: (id: number) => request<ListResponse<SelectivePressure>>(`/species/${id}/pressures`),
+  startEvolution: (id: number, evolutionId: string) => post(`/species/${id}/evolutions/${evolutionId}`),
   previewSpecies: (input: SpeciesInput) => post<ViabilityPreview>("/species/preview", input),
   createSpecies: (input: SpeciesInput) => post<Species>("/species", input),
   migrate: (id: number, destination_habitat_id: number) => post<PlayerAction>(`/species/${id}/migrate`, { destination_habitat_id }),

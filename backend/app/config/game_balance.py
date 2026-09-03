@@ -65,6 +65,9 @@ class BalanceConfig:
     strategy_cooldown_ticks: int = 4
     bot_action_interval_ticks: int = 4
     environment_delta_limit: float = 0.05
+    resource_biomass_rate: float = 0.02
+    resource_energy_rate: float = 0.01
+    resource_genetic_rate: float = 0.001
 
 
 BALANCE = BalanceConfig()

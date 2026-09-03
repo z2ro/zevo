@@ -37,9 +37,20 @@ def execute_add_historical_flag(effect, ctx: EffectExecutionContext):
     return {"historical_flag": effect.flag}
 
 
+def execute_modify_trait(effect, ctx: EffectExecutionContext):
+    target = _target(ctx, effect.target)
+    if target is None:
+        raise ValueError(f"effect target '{effect.target}' is unavailable in execution context")
+    before = getattr(target, effect.trait)
+    after = max(0, min(100, before + effect.amount))
+    setattr(target, effect.trait, after)
+    return {"trait": effect.trait, "old_value": before, "new_value": after}
+
+
 EFFECT_HANDLERS: dict[str, Callable] = {
     "modify_population": execute_modify_population,
     "add_historical_flag": execute_add_historical_flag,
+    "modify_trait": execute_modify_trait,
 }
 
 

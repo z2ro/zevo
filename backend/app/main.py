@@ -13,15 +13,18 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.config.game_balance import BALANCE
+from app.engine import CONTENT
 from app.db.bootstrap import bootstrap_world
 from app.db.session import get_session_factory
-from app.models.entities import GameEvent, Habitat, Player, PlayerAction, Species, SpeciesPopulationSnapshot, SpeciesTraitHistory, World, WorldSnapshot
+from app.models.entities import GameEvent, Habitat, Player, PlayerAction, Species, SpeciesEvolution, SpeciesPopulationSnapshot, SpeciesTraitHistory, World, WorldSnapshot
 from app.models.enums import ActionType, EventRarity, SpeciesStatus, Strategy
 from app.schemas.species import SpeciesCreate, SpeciesRead
 from app.services.action_service import ActionServiceError, change_strategy, queue_focus, queue_migration, split_species
 from app.services.scheduler import start_scheduler
 from app.services.simulation_service import SimulationService
 from app.services.species_service import SpeciesServiceError, abandon_species, create_species, preview_species
+from app.services.evolution_service import EvolutionServiceError, start_evolution
+from app.simulation.pressures import resolve_pressures
 
 
 @asynccontextmanager
@@ -87,6 +90,12 @@ def row(value):
 def serialize_species(value: Species):
     data = row(value)
     data["traits"] = {name: data.pop(name) for name in TRAIT_FIELDS}
+    rate = max(0, round(value.population * max(0.0, value.fitness)))
+    biomass_rate = max(1, round(rate * BALANCE.resource_biomass_rate))
+    energy_rate = max(1, round(rate * BALANCE.resource_energy_rate))
+    genetic_rate = max(1, round(rate * BALANCE.resource_genetic_rate))
+    data["resources"] = {"biomass": value.biomass, "energy": value.energy, "genetic_material": value.genetic_material, "adaptation_points": value.adaptation_points}
+    data["resource_rates"] = {"biomass": biomass_rate, "energy": energy_rate, "genetic_material": genetic_rate}
     return data
 
 
@@ -183,6 +192,36 @@ async def species_detail(species_id: int, db: Db):
     data["population_history"] = [row(x) for x in db.scalars(select(SpeciesPopulationSnapshot).where(SpeciesPopulationSnapshot.species_id == species_id).order_by(SpeciesPopulationSnapshot.id.desc()).limit(100))]
     data["trait_history"] = [row(x) for x in db.scalars(select(SpeciesTraitHistory).where(SpeciesTraitHistory.species_id == species_id).order_by(SpeciesTraitHistory.id.desc()).limit(100))]
     return data
+
+
+@app.get("/api/species/{species_id}/evolutions")
+async def species_evolutions(species_id: int, db: Db):
+    if not db.get(Species, species_id): raise HTTPException(404, "Species not found")
+    species = db.get(Species, species_id); habitat = db.get(Habitat, species.habitat_id)
+    pressures = resolve_pressures(species, habitat) if habitat else []
+    items = []
+    for key, spec in sorted(CONTENT["evolutions"].items()):
+        minimum = {"LOW": 0.0, "MEDIUM": .25, "HIGH": .5, "CRITICAL": .75}.get(spec.pressure.get("minimum_severity", "LOW"), 0.0)
+        available = not spec.pressure or any(p.type == spec.pressure.get("type") and p.score >= minimum for p in pressures)
+        items.append({"id": key, "name": spec.name, "category": spec.category, "level": spec.level, "cost": spec.cost, "duration_ticks": spec.duration_ticks, "requirements": spec.requirements, "pressure": spec.pressure, "selection_bias": spec.selection_bias, "tradeoffs": spec.tradeoffs, "available": available, "status": (db.scalar(select(SpeciesEvolution.status).where(SpeciesEvolution.species_id == species_id, SpeciesEvolution.evolution_id == key).order_by(SpeciesEvolution.id.desc())) or None)})
+    return {"items": items}
+
+
+@app.get("/api/species/{species_id}/pressures")
+async def species_pressures(species_id: int, db: Db):
+    species = db.get(Species, species_id)
+    if not species: raise HTTPException(404, "Species not found")
+    habitat = db.get(Habitat, species.habitat_id)
+    if not habitat: return {"items": []}
+    return {"items": [p.__dict__ for p in resolve_pressures(species, habitat)]}
+
+
+@app.post("/api/species/{species_id}/evolutions/{evolution_id}", status_code=202)
+async def begin_evolution(species_id: int, evolution_id: str, db: Db):
+    try:
+        result = start_evolution(db, zero(db).id, species_id, evolution_id, world(db).tick); db.commit(); return row(result)
+    except EvolutionServiceError as exc:
+        raise HTTPException(exc.status_code, {"error": {"code": exc.code, "message": exc.message, "details": {}}})
 
 
 @app.post("/api/species/preview")

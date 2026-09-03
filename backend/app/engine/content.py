@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import operator
+from app.config.game_balance import TRAIT_NAMES
 from app.models.enums import EventRarity, Strategy
 
 import yaml
@@ -10,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 
 OPERATORS = {"eq", "neq", "gt", "gte", "lt", "lte", "in"}
-EFFECT_TYPES = {"modify_population", "add_historical_flag"}
+EFFECT_TYPES = {"modify_population", "add_historical_flag", "modify_trait"}
 TARGETS = {"parasite", "host", "species", "world"}
 CONDITION_FIELDS = {
     "species.generation", "species.population", "species.status", "species.species_type",
@@ -57,6 +58,8 @@ class EffectSpec(BaseModel):
     target: str
     multiplier: float | None = None
     flag: str | None = None
+    trait: str | None = None
+    amount: int | None = None
 
     @model_validator(mode="after")
     def valid_effect(self):
@@ -70,6 +73,8 @@ class EffectSpec(BaseModel):
         if self.type == "add_historical_flag":
             if not self.flag or self.multiplier is not None:
                 raise ValueError("add_historical_flag requires only flag")
+        if self.type == "modify_trait" and (self.target != "species" or self.trait not in TRAIT_NAMES or self.amount is None or self.multiplier is not None or self.flag is not None):
+            raise ValueError("modify_trait requires species, a known trait, and amount")
         return self
 
 
@@ -88,6 +93,13 @@ class ContentDefinition(BaseModel):
     chance: float | None = Field(default=None, ge=0, le=1)
     dev_chance_multiplier: float = Field(default=1.0, ge=1)
     effects: list[EffectSpec] = Field(default_factory=list)
+    category: str | None = None
+    level: int | None = Field(default=None, ge=1)
+    cost: dict[str, int] = Field(default_factory=dict)
+    requirements: list[dict[str, int | str]] = Field(default_factory=list)
+    pressure: dict[str, str] = Field(default_factory=dict)
+    selection_bias: dict[str, float | str] = Field(default_factory=dict)
+    tradeoffs: dict[str, float] = Field(default_factory=dict)
 
 
 def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
@@ -115,6 +127,10 @@ def _load_directory(root: Path, pattern: str) -> dict[str, ContentDefinition]:
             raise ValueError(f"action content {path} requires duration_ticks and modifiers")
         if root.name == "strategies" and (not definition.name or "fitness_bonus" not in definition.modifiers):
             raise ValueError(f"strategy content {path} requires name and fitness_bonus")
+        if root.name == "evolutions" and (not definition.name or definition.duration_ticks is None or not definition.cost):
+            raise ValueError(f"evolution content {path} requires name, cost and duration_ticks")
+        if any(value < 0 for value in definition.cost.values()):
+            raise ValueError(f"negative evolution cost in {path}")
         if definition.rarity and definition.rarity not in {item.value for item in EventRarity}:
             raise ValueError(f"unknown event rarity {definition.rarity} in {path}")
         parsed[definition.id] = definition
@@ -129,6 +145,7 @@ def load_content(root: Path | None = None) -> dict[str, dict[str, ContentDefinit
         "events": _load_directory(root / "events", "*.yaml"),
         "actions": _load_directory(root / "actions", "*.yaml"),
         "strategies": _load_directory(root / "strategies", "*.yaml"),
+        "evolutions": _load_directory(root / "evolutions", "*.yaml"),
     }
     expected = {item.value for item in Strategy}
     if set(result["strategies"]) != expected:

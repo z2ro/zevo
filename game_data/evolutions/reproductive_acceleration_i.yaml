@@ -1,0 +1,8 @@
+id: REPRODUCTIVE_ACCELERATION_I
+name: Aceleração reprodutiva I
+category: REPRODUCTION
+level: 1
+cost: {biomass: 450, energy: 250, genetic_material: 20}
+duration_ticks: 10
+effects: [{type: modify_trait, target: species, trait: reproduction_rate, amount: 2}]
+requirements: []
