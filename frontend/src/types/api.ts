@@ -23,7 +23,12 @@ export interface Species {
   extinct_at: string | null; traits: Traits;
   resources?: { biomass: number; energy: number; genetic_material: number; adaptation_points: number };
   resource_rates?: { biomass: number; energy: number; genetic_material: number };
+  population_history?: PopulationSnapshot[];
+  trait_history?: TraitHistory[];
 }
+
+export interface PopulationSnapshot { generation: number; population: number; fitness: number; }
+export interface TraitHistory { generation: number; trait: keyof Traits; old_value: number; new_value: number; cause: string; }
 
 export interface Evolution { id: string; name: string; category: string; level: number; cost: Record<string, number>; duration_ticks: number; requirements: unknown[]; status: string | null; ticks_remaining?: number | null; available: boolean; can_start: boolean; blocked_reason?: string | null; pressure?: Record<string, string>; selection_bias?: Record<string, string | number>; tradeoffs?: Record<string, number>; }
 export interface SelectivePressure { type: string; score: number; severity: string; description: string; }
