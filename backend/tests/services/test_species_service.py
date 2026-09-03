@@ -12,7 +12,8 @@ sys.path.insert(0, str(BACKEND))
 
 from app.db.base import Base
 from app.db.session import create_engine_for_url
-from app.models import Habitat, Player, SpeciesStatus, World
+from app.models import Habitat, Player, SpeciesEvolution, SpeciesStatus, World
+from app.models.enums import EvolutionStatus
 from app.schemas.species import SpeciesCreate
 from app.services.species_service import (
     SpeciesServiceError,
@@ -20,6 +21,7 @@ from app.services.species_service import (
     create_species,
     preview_species,
 )
+from app.services.evolution_service import active_adaptive_response, start_evolution
 
 
 @pytest.fixture
@@ -112,6 +114,27 @@ def test_abandon_preserves_species_as_wild_and_allows_new_species(session):
     second = create_species(session, 1, SpeciesCreate.model_validate(payload(name="Successor")))
     session.commit()
     assert second.id != first.id and second.is_player_controlled
+
+
+def test_abandon_cancels_active_adaptive_response(session):
+    species = create_species(session, 1, SpeciesCreate.model_validate(payload()))
+    historical = SpeciesEvolution(
+        species_id=species.id, evolution_id="CELLULAR_REPAIR_I", level=1,
+        status=EvolutionStatus.COMPLETED, started_at_tick=0, complete_at_tick=0,
+    )
+    session.add(historical)
+    process = start_evolution(session, 1, species.id, "RADIATION_SHIELDING_I", 0)
+    assert active_adaptive_response(session, species.id, 1)[0] is not None
+
+    abandon_species(session, 1, species.id)
+
+    assert process.status is EvolutionStatus.CANCELLED
+    assert process.completed_at is not None
+    assert active_adaptive_response(session, species.id, 1) == (
+        None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0},
+    )
+    assert session.get(SpeciesEvolution, process.id).status is EvolutionStatus.CANCELLED
+    assert historical.status is EvolutionStatus.COMPLETED
 
 
 def test_cannot_abandon_another_players_species(session):

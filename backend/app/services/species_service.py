@@ -13,6 +13,7 @@ from app.models.enums import ActionStatus, ActionType, SpeciesStatus
 from app.schemas.species import SpeciesCreate, SpeciesPreview
 from app.simulation.fitness import FitnessContext, preview_fitness
 from app.simulation.interactions import fitness_context_for
+from app.services.evolution_service import cancel_active_adaptive_responses
 
 
 @dataclass(frozen=True)
@@ -142,5 +143,6 @@ def abandon_species(session: Session, player_id: int, species_id: int) -> Specie
         action.status = ActionStatus.FAILED
         action.completed_at = now
         action.payload = {**action.payload, "failure_reason": "species_abandoned"}
+    cancel_active_adaptive_responses(session, species.id)
     session.flush()
     return species

@@ -27,11 +27,13 @@ def pressures_for_species(session: Session, species: Species):
 
 
 def active_adaptive_response(session: Session, species_id: int, tick: int) -> tuple[MutationBias | None, dict[str, float]]:
-    row = session.scalar(select(SpeciesEvolution).where(
+    row = session.scalar(select(SpeciesEvolution).join(Species).where(
         SpeciesEvolution.species_id == species_id,
         SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
         SpeciesEvolution.started_at_tick < tick,
         SpeciesEvolution.complete_at_tick >= tick,
+        Species.status == SpeciesStatus.ACTIVE,
+        Species.is_player_controlled.is_(True),
     ).order_by(SpeciesEvolution.id.desc()))
     if not row:
         return None, {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
@@ -42,6 +44,16 @@ def active_adaptive_response(session: Session, species_id: int, tick: int) -> tu
     modifiers = {"reproduction_modifier": 1.0, "mortality_modifier": 1.0}
     modifiers.update(spec.tradeoffs)
     return bias, modifiers
+
+
+def cancel_active_adaptive_responses(session: Session, species_id: int) -> None:
+    now = datetime.now(timezone.utc)
+    for row in session.scalars(select(SpeciesEvolution).where(
+        SpeciesEvolution.species_id == species_id,
+        SpeciesEvolution.status == EvolutionStatus.IN_PROGRESS,
+    )):
+        row.status = EvolutionStatus.CANCELLED
+        row.completed_at = now
 
 
 def combine_modifiers(*groups: dict[str, float]) -> dict[str, float]:

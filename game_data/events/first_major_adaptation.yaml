@@ -5,4 +5,4 @@ description: A major adaptation improved fitness.
 rarity: WORLD_FIRST
 global_unique: true
 repeat_policy: ONCE_PER_WORLD
-trigger: {field: mutation.fitness_delta, op: gte, value: 0.12}
+trigger: {field: mutation.fitness_delta, op: gte, value: 0.02}

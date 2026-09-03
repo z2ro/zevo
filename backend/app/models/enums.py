@@ -20,4 +20,4 @@ class ActionType(StrEnum):
 class ActionStatus(StrEnum):
     PENDING = "PENDING"; COMPLETED = "COMPLETED"; FAILED = "FAILED"
 class EvolutionStatus(StrEnum):
-    IN_PROGRESS = "IN_PROGRESS"; COMPLETED = "COMPLETED"
+    IN_PROGRESS = "IN_PROGRESS"; COMPLETED = "COMPLETED"; CANCELLED = "CANCELLED"
